@@ -1,4 +1,3 @@
-from __future__ import print_function
 """
 First, download the data and place in `benchmark_data`
 
@@ -16,15 +15,18 @@ Runtime history:
    1bc8711 130.93s MacBook Pro (Retina, 15-inch, Mid 2014) 2.2GHz i7, 16GB RAM
    2277962  80.68s MacBook Pro (Retina, 15-inch, Mid 2014) 2.2GHz i7, 16GB RAM
 """
-from rasterstats import zonal_stats
 import time
 
-class Timer():
+from rasterstats import zonal_stats
+
+
+class Timer:
     def __enter__(self):
         self.start = time.time()
 
     def __exit__(self, *args):
         print("Time:", time.time() - self.start)
+
 
 countries = "./benchmark_data/ne_50m_admin_0_countries.shp"
 elevation = "./benchmark_data/SRTM_1km.tif"

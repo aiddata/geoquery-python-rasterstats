@@ -1,13 +1,16 @@
 import os
-import rasterio
-from rasterstats.point import point_window_unitxy, bilinear, geom_xys
-from rasterstats import point_query
 
-raster = os.path.join(os.path.dirname(__file__), 'data/slope.tif')
-raster_nodata = os.path.join(os.path.dirname(__file__), 'data/slope_nodata.tif')
+import rasterio
+
+from rasterstats import point_query
+from rasterstats.point import bilinear, geom_xys, point_window_unitxy
+
+raster = os.path.join(os.path.dirname(__file__), "data/slope.tif")
+raster_nodata = os.path.join(os.path.dirname(__file__), "data/slope_nodata.tif")
 
 with rasterio.open(raster) as src:
-    affine = src.affine
+    affine = src.transform
+
 
 def test_unitxy_ul():
     win, unitxy = point_window_unitxy(245300, 1000073, affine)
@@ -16,6 +19,7 @@ def test_unitxy_ul():
     # should be in LR of new unit square
     assert x > 0.5
     assert y < 0.5
+
 
 def test_unitxy_ur():
     win, unitxy = point_window_unitxy(245318, 1000073, affine)
@@ -32,6 +36,7 @@ def test_unitxy_ur():
     assert x < 0.5
     assert y < 0.5
 
+
 def test_unitxy_lr():
     win, unitxy = point_window_unitxy(245318, 1000056, affine)
     assert win == ((31, 33), (39, 41))
@@ -39,6 +44,7 @@ def test_unitxy_lr():
     # should be in UL of new unit square
     assert x < 0.5
     assert y > 0.5
+
 
 def test_unitxy_ll():
     win, unitxy = point_window_unitxy(245300, 1000056, affine)
@@ -48,10 +54,11 @@ def test_unitxy_ll():
     assert x > 0.5
     assert y > 0.5
 
+
 def test_bilinear():
     import numpy as np
-    arr = np.array([[1.0, 2.0],
-                    [3.0, 4.0]])
+
+    arr = np.array([[1.0, 2.0], [3.0, 4.0]])
 
     assert bilinear(arr, 0, 0) == 3.0
     assert bilinear(arr, 1, 0) == 4.0
@@ -63,8 +70,7 @@ def test_bilinear():
 
 
 def test_xy_array_bilinear_window():
-    """ integration test
-    """
+    """integration test"""
     x, y = (245309, 1000064)
 
     with rasterio.open(raster) as src:
@@ -85,8 +91,8 @@ def test_point_query_geojson():
     point = "POINT(245309 1000064)"
     features = point_query(point, raster, property_name="TEST", geojson_out=True)
     for feature in features:
-        assert 'TEST' in feature['properties']
-        assert round(feature['properties']['TEST']) == 74
+        assert "TEST" in feature["properties"]
+        assert round(feature["properties"]["TEST"]) == 74
 
 
 def test_point_query_nodata():
@@ -112,23 +118,49 @@ def test_point_query_nodata():
 
 
 def test_geom_xys():
-    from shapely.geometry import (Point, MultiPoint,
-                                  LineString, MultiLineString,
-                                  Polygon, MultiPolygon)
+    from shapely.geometry import (
+        LineString,
+        MultiLineString,
+        MultiPoint,
+        MultiPolygon,
+        Point,
+        Polygon,
+    )
+
     pt = Point(0, 0)
     assert list(geom_xys(pt)) == [(0, 0)]
+
     mpt = MultiPoint([(0, 0), (1, 1)])
     assert list(geom_xys(mpt)) == [(0, 0), (1, 1)]
+
     line = LineString([(0, 0), (1, 1)])
     assert list(geom_xys(line)) == [(0, 0), (1, 1)]
+
     mline = MultiLineString([((0, 0), (1, 1)), ((-1, 0), (1, 0))])
     assert list(geom_xys(mline)) == [(0, 0), (1, 1), (-1, 0), (1, 0)]
-    poly = Polygon([(0, 0), (1, 1), (1, 0)])
+
+    poly = Polygon([(0, 0), (1, 1), (1, 0), (0, 0)])
     assert list(geom_xys(poly)) == [(0, 0), (1, 1), (1, 0), (0, 0)]
+
     ring = poly.exterior
     assert list(geom_xys(ring)) == [(0, 0), (1, 1), (1, 0), (0, 0)]
+
     mpoly = MultiPolygon([poly, Polygon([(2, 2), (3, 3), (3, 2)])])
-    assert list(geom_xys(mpoly)) == [(0, 0), (1, 1), (1, 0), (0, 0),
-                                     (2, 2), (3, 3), (3, 2), (2, 2)]
+    assert list(geom_xys(mpoly)) == [
+        (0, 0),
+        (1, 1),
+        (1, 0),
+        (0, 0),
+        (2, 2),
+        (3, 3),
+        (3, 2),
+        (2, 2),
+    ]
+
     mpt3d = MultiPoint([(0, 0, 1), (1, 1, 2)])
     assert list(geom_xys(mpt3d)) == [(0, 0), (1, 1)]
+
+
+# TODO #  gen_point_query(interpolation="fake")
+# TODO #  gen_point_query(interpolation="bilinear")
+# TODO #  gen_point_query(<features_without_props>)

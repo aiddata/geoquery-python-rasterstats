@@ -1,22 +1,33 @@
-# -*- coding: utf-8 -*-
-from __future__ import absolute_import
-from __future__ import division
-import numpy as np
+import inspect
+import sys
 import warnings
 from copy import copy
+
+import numpy as np
 from affine import Affine
 from shapely.geometry import shape
-from .io import read_features, Raster
-from .utils import (rasterize_geom, get_percentile, check_stats,
-                    remap_categories, key_assoc_val, boxify_points,
-                    rasterize_pctcover_geom, get_latitude_scale,
-                    split_geom, VALID_STATS)
+
+from rasterstats.io import Raster, read_features
+from rasterstats.utils import (
+    boxify_points,
+    check_stats,
+    get_percentile,
+    key_assoc_val,
+    rasterize_geom,
+    remap_categories,
+    rasterize_pctcover_geom,
+    get_latitude_scale,
+    split_geom,
+    VALID_STATS
+)
 
 
 def raster_stats(*args, **kwargs):
     """Deprecated. Use zonal_stats instead."""
-    warnings.warn("'raster_stats' is an alias to 'zonal_stats'"
-                  " and will disappear in 1.0", DeprecationWarning)
+    warnings.warn(
+        "'raster_stats' is an alias to 'zonal_stats'" " and will disappear in 1.0",
+        DeprecationWarning,
+    )
     return zonal_stats(*args, **kwargs)
 
 
@@ -32,25 +43,29 @@ def zonal_stats(*args, **kwargs):
 
 
 def gen_zonal_stats(
-        vectors, raster,
-        layer=0,
-        band=1,
-        nodata=None,
-        affine=None,
-        stats=None,
-        all_touched=False,
-        latitude_correction=False,
-        percent_cover_selection=None,
-        percent_cover_weighting=False,
-        percent_cover_scale=None,
-        limit=None,
-        categorical=False,
-        category_map=None,
-        add_stats=None,
-        zone_func=None,
-        raster_out=False,
-        prefix=None,
-        geojson_out=False, **kwargs):
+    vectors,
+    raster,
+    layer=0,
+    band=1,
+    nodata=None,
+    affine=None,
+    stats=None,
+    all_touched=False,
+    categorical=False,
+    category_map=None,
+    add_stats=None,
+    zone_func=None,
+    raster_out=False,
+    prefix=None,
+    geojson_out=False,
+    boundless=True,
+    latitude_correction=False,
+    percent_cover_selection=None,
+    percent_cover_weighting=False,
+    percent_cover_scale=None,
+    limit=None,
+    **kwargs,
+):
     """Zonal statistics of raster values aggregated to vector geometries.
 
     Parameters
@@ -61,7 +76,7 @@ def gen_zonal_stats(
         If ndarray is passed, the ``affine`` kwarg is required.
 
     layer: int or string, optional
-        If `vectors` is a path to an fiona source,
+        If `vectors` is a path to a fiona source,
         specify the vector layer to use either by name or number.
         defaults to 0
 
@@ -165,6 +180,10 @@ def gen_zonal_stats(
         with zonal stats appended as additional properties.
         Use with `prefix` to ensure unique and meaningful property names.
 
+    boundless: boolean
+        Allow features that extend beyond the raster dataset’s extent, default: True
+        Cells outside dataset extents are treated as nodata.
+
     Returns
     -------
     generator of dicts (if geojson_out is False)
@@ -177,20 +196,23 @@ def gen_zonal_stats(
     stats, run_count = check_stats(stats, categorical)
 
     # Handle 1.0 deprecations
-    transform = kwargs.get('transform')
+    transform = kwargs.get("transform")
     if transform:
-        warnings.warn("GDAL-style transforms will disappear in 1.0. "
-                      "Use affine=Affine.from_gdal(*transform) instead",
-                      DeprecationWarning)
+        warnings.warn(
+            "GDAL-style transforms will disappear in 1.0. "
+            "Use affine=Affine.from_gdal(*transform) instead",
+            DeprecationWarning,
+        )
         if not affine:
             affine = Affine.from_gdal(*transform)
 
-    cp = kwargs.get('copy_properties')
+    cp = kwargs.get("copy_properties")
     if cp:
-        warnings.warn("Use `geojson_out` to preserve feature properties",
-                      DeprecationWarning)
+        warnings.warn(
+            "Use `geojson_out` to preserve feature properties", DeprecationWarning
+        )
 
-    band_num = kwargs.get('band_num')
+    band_num = kwargs.get("band_num")
     if band_num:
         warnings.warn("Use `band` to specify band number", DeprecationWarning)
         band = band_num
@@ -283,9 +305,9 @@ def gen_zonal_stats(
     with Raster(raster, affine, nodata, band) as rast:
         features_iter = read_features(vectors, layer)
         for _, feat in enumerate(features_iter):
-            geom = shape(feat['geometry'])
+            geom = shape(feat["geometry"])
 
-            if 'Point' in geom.type:
+            if "Point" in geom.geom_type:
                 geom = boxify_points(geom, rast)
                 percent_cover = percent_cover_weighting = False
 
@@ -300,6 +322,7 @@ def gen_zonal_stats(
                 pixel_size = rast.affine[0]
                 origin = (rast.affine[2], rast.affine[5])
                 geom_list = split_geom(geom, limit, pixel_size, origin=origin)
+
 
 
             # -----------------------------------------------------------------
@@ -326,28 +349,38 @@ def gen_zonal_stats(
 
 
                 # nodata mask
-                isnodata = (fsrc.array == fsrc.nodata)
+                isnodata = fsrc.array == fsrc.nodata
 
                 # add nan mask (if necessary)
-                has_nan = (np.issubdtype(fsrc.array.dtype, float)
-                    and np.isnan(fsrc.array.min()))
+                has_nan = np.issubdtype(fsrc.array.dtype, np.floating) and np.isnan(
+                    fsrc.array.min()
+                )
                 if has_nan:
-                    isnodata = (isnodata | np.isnan(fsrc.array))
+                    isnodata = isnodata | np.isnan(fsrc.array)
 
                 # Mask the source data array
                 # mask everything that is not a valid value or not within our geom
+                masked = np.ma.MaskedArray(fsrc.array, mask=(isnodata | ~rv_array))
 
-                masked = np.ma.MaskedArray(
-                    fsrc.array,
-                    mask=(isnodata | ~rv_array))
+                # If we're on 64 bit platform and the array is an integer type
+                # make sure we cast to 64 bit to avoid overflow for certain numpy ops
+                if sys.maxsize > 2**32 and issubclass(masked.dtype.type, np.integer):
+                    accum_dtype = "int64"
+                else:
+                    accum_dtype = None  # numpy default
 
                 # execute zone_func on masked zone ndarray
                 if zone_func is not None:
                     if not callable(zone_func):
-                        raise TypeError(('zone_func must be a callable '
-                                         'which accepts function a '
-                                         'single `zone_array` arg.'))
-                    zone_func(masked)
+                        raise TypeError(
+                            "zone_func must be a callable function "
+                            "which accepts a single `zone_array` arg."
+                        )
+                    value = zone_func(masked)
+
+                    # check if zone_func has return statement
+                    if value is not None:
+                        masked = value
 
                 if latitude_correction and 'mean' in stats:
                     latitude_scale = [
@@ -357,14 +390,23 @@ def gen_zonal_stats(
 
                 if masked.compressed().size == 0:
                     # nothing here, fill with None and move on
-                    sub_feature_stats = dict([(stat, None) for stat in stats])
-                    if 'count' in stats:  # special case, zero makes sense here
-                        sub_feature_stats['count'] = 0
+                    feature_stats = {stat: None for stat in stats}
+                    if "count" in stats:  # special case, zero makes sense here
+                        feature_stats["count"] = 0
                 else:
                     if run_count:
                         keys, counts = np.unique(masked.compressed(), return_counts=True)
-                        pixel_count = dict(zip([np.asscalar(k) for k in keys],
-                                               [np.asscalar(c) for c in counts]))
+                        try:
+                            pixel_count = dict(
+                                zip([k.item() for k in keys], [c.item() for c in counts])
+                            )
+                        except AttributeError:
+                            pixel_count = dict(
+                                zip(
+                                    [np.asscalar(k) for k in keys],
+                                    [np.asscalar(c) for c in counts],
+                                )
+                            )
 
                     if categorical:
                         sub_feature_stats = dict(pixel_count)
@@ -381,22 +423,22 @@ def gen_zonal_stats(
 
                     if 'sum' in stats:
                         if percent_cover_weighting:
-                            sub_feature_stats['sum'] = float(np.sum(masked * cover_weights))
+                            sub_feature_stats['sum'] = float(np.sum(masked * cover_weights, dtype=accum_dtype))
                         else:
-                            sub_feature_stats['sum'] = float(masked.sum())
+                            sub_feature_stats['sum'] = float(masked.sum(dtype=accum_dtype))
 
                     if 'mean' in stats:
                         if percent_cover_weighting and latitude_correction:
 
-                            tmp_numerator = np.sum((masked.T * latitude_scale).T * cover_weights)
-                            tmp_denominator = np.sum((~masked.mask.T * latitude_scale).T * cover_weights)
+                            tmp_numerator = np.sum((masked.T * latitude_scale).T * cover_weights, dtype=accum_dtype)
+                            tmp_denominator = np.sum((~masked.mask.T * latitude_scale).T * cover_weights, dtype=accum_dtype)
                             sub_feature_stats['mean'] = float(tmp_numerator / tmp_denominator)
-                            sub_feature_stats['latitude_correction'] = tmp_denominator / np.sum(~masked.mask * cover_weights)
+                            sub_feature_stats['latitude_correction'] = tmp_denominator / np.sum(~masked.mask * cover_weights, dtype=accum_dtype)
 
                         elif percent_cover_weighting:
 
-                            tmp_numerator = np.sum(masked * cover_weights)
-                            tmp_denominator = np.sum(~masked.mask * cover_weights)
+                            tmp_numerator = np.sum(masked * cover_weights, dtype=accum_dtype)
+                            tmp_denominator = np.sum(~masked.mask * cover_weights, dtype=accum_dtype)
                             sub_feature_stats['mean'] = float(tmp_numerator / tmp_denominator)
 
                         elif latitude_correction:
@@ -449,7 +491,15 @@ def gen_zonal_stats(
 
                 if add_stats is not None:
                     for stat_name, stat_func in add_stats.items():
-                        sub_feature_stats[stat_name] = stat_func(masked)
+                        n_params = len(inspect.signature(stat_func).parameters.keys())
+                        if n_params == 3:
+                            feature_stats[stat_name] = stat_func(masked, feat["properties"], rv_array)
+                        # backwards compatible with two-argument function
+                        elif n_params == 2:
+                            feature_stats[stat_name] = stat_func(masked, feat["properties"])
+                        # backwards compatible with single-argument function
+                        else:
+                            feature_stats[stat_name] = stat_func(masked)
 
                 if raster_out:
                     sub_feature_stats['mini_raster_array'] = masked
@@ -529,15 +579,15 @@ def gen_zonal_stats(
             if prefix is not None:
                 prefixed_feature_stats = {}
                 for key, val in feature_stats.items():
-                    newkey = "{}{}".format(prefix, key)
+                    newkey = f"{prefix}{key}"
                     prefixed_feature_stats[newkey] = val
                 feature_stats = prefixed_feature_stats
 
             if geojson_out:
                 for key, val in feature_stats.items():
-                    if 'properties' not in feat:
-                        feat['properties'] = {}
-                    feat['properties'][key] = val
+                    if "properties" not in feat:
+                        feat["properties"] = {}
+                    feat["properties"][key] = val
                 yield feat
             else:
                 yield feature_stats

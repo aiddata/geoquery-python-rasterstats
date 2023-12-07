@@ -1,3 +1,45 @@
+0.19.0
+- Drop Python 2 support, Python 3 style updates #283
+- Sort imports #284
+- Add support for Fiona>1.9 #287
+
+0.18.0
+- Move project metadata to pyproject.toml #277
+- Black formatting #278
+- Don't cast integers to int64, use numpy accumulator dtype #279
+- Warn about nodata only once, io.NodataWarning type #280
+
+0.17.1
+- Fixes to keep up with recent versions of dependencies: #275 fiona, #266 shapely, #264 click
+- Added a pyproject.toml #265
+- Added CI testing for python 3.7 through 3.11
+
+0.17.0
+- Fix performance regression due to platform.architecture performance #258
+
+0.16.0
+- Fix deprecation warning with shapely 1.8+ #250
+
+0.15.0
+- Fix deprecation warning with Affine #211
+- Avoid unnecessary memory copy operation #213
+
+0.14.0
+- Add support return statement to zone_func #203
+- Take into account per dataset mask #198
+- Accessing geometry properties for user-defined stats #193
+- Updated method calls for numpy v1.16 #184
+
+0.13.1
+- Bug fix for io.read_features with Fiona 1.8+
+
+0.13.0
+- Require Rasterio>=1.0
+- Fix buffer logic for boxify_points (#171)
+
+0.12.1
+- Cast all integer data to int64 if we're on a 64 bit platform (#159)
+
 0.12.0
 - zone_func argument to apply a function to the masked array before computing stats
 - support shapely 1.6 exceptions
@@ -21,7 +63,7 @@
 0.10.0
 - Added a generator variant of zonal_stats (gen_zonal_stats) and point_query
 (gen_point_query) which yield results instead of returning a list
-- Dependency on cligj to standardize the geojson input/output args and opts 
+- Dependency on cligj to standardize the geojson input/output args and opts
 - Input/Output can be geojson sequences; allows for stream processing
 
 0.9.2

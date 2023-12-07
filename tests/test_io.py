@@ -1,50 +1,57 @@
-import sys
-import os
-import fiona
-import rasterio
 import json
-import pytest
-from shapely.geometry import shape
-from rasterstats.io import read_features, read_featurecollection, Raster  # todo parse_feature
-from rasterstats.io import boundless_array, window_bounds, bounds_window, rowcol
+import os
+import sys
 
+import fiona
+import pytest
+import rasterio
+from shapely.geometry import shape
+
+from rasterstats.io import (  # todo parse_feature
+    fiona_generator,
+    Raster,
+    boundless_array,
+    bounds_window,
+    read_featurecollection,
+    read_features,
+    rowcol,
+    window_bounds,
+)
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 DATA = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
-polygons = os.path.join(DATA, 'polygons.shp')
-raster = os.path.join(DATA, 'slope.tif')
+polygons = os.path.join(DATA, "polygons.shp")
+raster = os.path.join(DATA, "slope.tif")
 
 import numpy as np
-arr = np.array([[1, 1, 1],
-                [1, 1, 1],
-                [1, 1, 1]])
 
-arr3d = np.array([[[1, 1, 1],
-                   [1, 1, 1],
-                   [1, 1, 1]]])
+arr = np.array([[1, 1, 1], [1, 1, 1], [1, 1, 1]])
 
-with fiona.open(polygons, 'r') as src:
-    target_features = [f for f in src]
+arr3d = np.array([[[1, 1, 1], [1, 1, 1], [1, 1, 1]]])
 
-target_geoms = [shape(f['geometry']) for f in target_features]
+eps = 1e-6
+
+target_features = [f for f in fiona_generator(polygons)]
+
+target_geoms = [shape(f["geometry"]) for f in target_features]
 
 
 def _compare_geomlists(aa, bb):
     for a, b in zip(aa, bb):
-        assert a.almost_equals(b)
+        assert a.equals_exact(b, eps)
 
 
 def _test_read_features(indata):
     features = list(read_features(indata))
     # multi
-    geoms = [shape(f['geometry']) for f in features]
+    geoms = [shape(f["geometry"]) for f in features]
     _compare_geomlists(geoms, target_geoms)
 
 
 def _test_read_features_single(indata):
     # single (first target geom)
-    geom = shape(list(read_features(indata))[0]['geometry'])
-    assert geom.almost_equals(target_geoms[0])
+    geom = shape(list(read_features(indata))[0]["geometry"])
+    assert geom.equals_exact(target_geoms[0], eps)
 
 
 def test_fiona_path():
@@ -52,12 +59,12 @@ def test_fiona_path():
 
 
 def test_layer_index():
-    layer = fiona.listlayers(DATA).index('polygons')
+    layer = fiona.listlayers(DATA).index("polygons")
     assert list(read_features(DATA, layer=layer)) == target_features
 
 
 def test_layer_name():
-    assert list(read_features(DATA, layer='polygons')) == target_features
+    assert list(read_features(DATA, layer="polygons")) == target_features
 
 
 def test_path_unicode():
@@ -70,81 +77,87 @@ def test_path_unicode():
 
 
 def test_featurecollection():
-    assert read_featurecollection(polygons)['features'] == \
-        list(read_features(polygons)) == \
-        target_features
+    assert (
+        read_featurecollection(polygons)["features"]
+        == list(read_features(polygons))
+        == target_features
+    )
 
 
 def test_shapely():
-    with fiona.open(polygons, 'r') as src:
-        indata = [shape(f['geometry']) for f in src]
+    indata = [shape(f["geometry"]) for f in fiona_generator(polygons)]
     _test_read_features(indata)
     _test_read_features_single(indata[0])
 
 
 def test_wkt():
-    with fiona.open(polygons, 'r') as src:
-        indata = [shape(f['geometry']).wkt for f in src]
+    indata = [shape(f["geometry"]).wkt for f in fiona_generator(polygons)]
     _test_read_features(indata)
     _test_read_features_single(indata[0])
 
 
 def test_wkb():
-    with fiona.open(polygons, 'r') as src:
-        indata = [shape(f['geometry']).wkb for f in src]
+    indata = [shape(f["geometry"]).wkb for f in fiona_generator(polygons)]
     _test_read_features(indata)
     _test_read_features_single(indata[0])
 
 
 def test_mapping_features():
     # list of Features
-    with fiona.open(polygons, 'r') as src:
-        indata = [f for f in src]
+    indata = [f for f in fiona_generator(polygons)]
     _test_read_features(indata)
 
 
 def test_mapping_feature():
     # list of Features
-    with fiona.open(polygons, 'r') as src:
-        indata = [f for f in src]
+    indata = [f for f in fiona_generator(polygons)]
     _test_read_features(indata[0])
 
 
 def test_mapping_geoms():
-    with fiona.open(polygons, 'r') as src:
-        indata = [f for f in src]
-    _test_read_features(indata[0]['geometry'])
+    indata = [f for f in fiona_generator(polygons)]
+    _test_read_features(indata[0]["geometry"])
 
 
 def test_mapping_collection():
-    indata = {'type': "FeatureCollection"}
-    with fiona.open(polygons, 'r') as src:
-        indata['features'] = [f for f in src]
+    indata = {"type": "FeatureCollection"}
+    indata["features"] = [f for f in fiona_generator(polygons)]
     _test_read_features(indata)
 
 
 def test_jsonstr():
     # Feature str
-    with fiona.open(polygons, 'r') as src:
-        indata = [f for f in src]
+    indata = [f for f in fiona_generator(polygons)]
     indata = json.dumps(indata[0])
     _test_read_features(indata)
 
 
 def test_jsonstr_geom():
     # geojson geom str
-    with fiona.open(polygons, 'r') as src:
-        indata = [f for f in src]
-    indata = json.dumps(indata[0]['geometry'])
+    indata = [f for f in fiona_generator(polygons)]
+    indata = json.dumps(indata[0]["geometry"])
     _test_read_features(indata)
 
 
 def test_jsonstr_collection():
-    indata = {'type': "FeatureCollection"}
-    with fiona.open(polygons, 'r') as src:
-        indata['features'] = [f for f in src]
+    indata = {"type": "FeatureCollection"}
+    indata["features"] = [f for f in fiona_generator(polygons)]
     indata = json.dumps(indata)
     _test_read_features(indata)
+
+
+def test_jsonstr_collection_without_features():
+    indata = {"type": "FeatureCollection", "features": []}
+    indata = json.dumps(indata)
+    with pytest.raises(ValueError):
+        _test_read_features(indata)
+
+
+def test_invalid_jsonstr():
+    indata = {"type": "InvalidGeometry", "coordinates": [30, 10]}
+    indata = json.dumps(indata)
+    with pytest.raises(ValueError):
+        _test_read_features(indata)
 
 
 class MockGeoInterface:
@@ -153,29 +166,26 @@ class MockGeoInterface:
 
 
 def test_geo_interface():
-    with fiona.open(polygons, 'r') as src:
-        indata = [MockGeoInterface(f) for f in src]
+    indata = [MockGeoInterface(f) for f in fiona_generator(polygons)]
     _test_read_features(indata)
 
 
 def test_geo_interface_geom():
-    with fiona.open(polygons, 'r') as src:
-        indata = [MockGeoInterface(f['geometry']) for f in src]
+    indata = [MockGeoInterface(f["geometry"]) for f in fiona_generator(polygons)]
     _test_read_features(indata)
 
 
 def test_geo_interface_collection():
     # geointerface for featurecollection?
-    indata = {'type': "FeatureCollection"}
-    with fiona.open(polygons, 'r') as src:
-        indata['features'] = [f for f in src]
+    indata = {"type": "FeatureCollection"}
+    indata["features"] = [f for f in fiona_generator(polygons)]
     indata = MockGeoInterface(indata)
     _test_read_features(indata)
 
 
 def test_notafeature():
     with pytest.raises(ValueError):
-        list(read_features(['foo', 'POINT(-122 42)']))
+        list(read_features(["foo", "POINT(-122 42)"]))
 
     with pytest.raises(ValueError):
         list(read_features(Exception()))
@@ -224,26 +234,30 @@ def test_boundless_masked():
 def test_window_bounds():
     with rasterio.open(raster) as src:
         win = ((0, src.shape[0]), (0, src.shape[1]))
-        assert src.bounds == window_bounds(win, src.affine)
+        assert src.bounds == window_bounds(win, src.transform)
 
         win = ((5, 10), (5, 10))
-        assert src.window_bounds(win) == window_bounds(win, src.affine)
+        assert src.window_bounds(win) == window_bounds(win, src.transform)
 
 
 def test_bounds_window():
     with rasterio.open(raster) as src:
-        assert bounds_window(src.bounds, src.affine) == \
-            ((0, src.shape[0]), (0, src.shape[1]))
+        assert bounds_window(src.bounds, src.transform) == (
+            (0, src.shape[0]),
+            (0, src.shape[1]),
+        )
 
 
 def test_rowcol():
     import math
+
     with rasterio.open(raster) as src:
         x, _, _, y = src.bounds
         x += 1.0
         y -= 1.0
-        assert rowcol(x, y, src.affine, op=math.floor) == (0, 0)
-        assert rowcol(x, y, src.affine, op=math.ceil) == (1, 1)
+        assert rowcol(x, y, src.transform, op=math.floor) == (0, 0)
+        assert rowcol(x, y, src.transform, op=math.ceil) == (1, 1)
+
 
 def test_Raster_index():
     x, y = 245114, 1000968
@@ -263,7 +277,7 @@ def test_Raster():
 
     with rasterio.open(raster) as src:
         arr = src.read(1)
-        affine = src.affine
+        affine = src.transform
         nodata = src.nodata
 
     r2 = Raster(arr, affine, nodata, band=1).read(bounds)
@@ -275,6 +289,41 @@ def test_Raster():
 
     # If the abstraction is correct, the arrays are equal
     assert np.array_equal(r1.array, r2.array)
+
+
+def test_Raster_boundless_disabled():
+    import numpy as np
+
+    bounds = (
+        244300.61494985913,
+        998877.8262535353,
+        246444.72726211764,
+        1000868.7876863468,
+    )
+    outside_bounds = (244156, 1000258, 245114, 1000968)
+
+    # rasterio src fails outside extent
+    with pytest.raises(ValueError):
+        r1 = Raster(raster, band=1).read(outside_bounds, boundless=False)
+
+    # rasterio src works inside extent
+    r2 = Raster(raster, band=1).read(bounds, boundless=False)
+
+    with rasterio.open(raster) as src:
+        arr = src.read(1)
+        affine = src.transform
+        nodata = src.nodata
+
+    # ndarray works inside extent
+    r3 = Raster(arr, affine, nodata, band=1).read(bounds, boundless=False)
+
+    # ndarray src fails outside extent
+    with pytest.raises(ValueError):
+        r4 = Raster(arr, affine, nodata, band=1).read(outside_bounds, boundless=False)
+
+    # If the abstraction is correct, the arrays are equal
+    assert np.array_equal(r2.array, r3.array)
+
 
 def test_Raster_context():
     # Assigned a regular name, stays open
@@ -289,11 +338,9 @@ def test_Raster_context():
 
 
 def test_geointerface():
-    class MockGeo(object):
+    class MockGeo:
         def __init__(self, features):
-            self.__geo_interface__ = {
-                'type': "FeatureCollection",
-                'features': features}
+            self.__geo_interface__ = {"type": "FeatureCollection", "features": features}
 
         # Make it iterable just to ensure that geo interface
         # takes precendence over iterability
@@ -306,18 +353,21 @@ def test_geointerface():
         def next(self):
             pass
 
-    features = [{
-        "type": "Feature",
-        "properties": {},
-        "geometry": {
-            "type": "Point",
-            "coordinates": [0, 0]}
-    }, {
-        "type": "Feature",
-        "properties": {},
-        "geometry": {
-            "type": "Polygon",
-            "coordinates": [[[-50, -10], [-40, 10], [-30, -10], [-50, -10]]]}}]
+    features = [
+        {
+            "type": "Feature",
+            "properties": {},
+            "geometry": {"type": "Point", "coordinates": [0, 0]},
+        },
+        {
+            "type": "Feature",
+            "properties": {},
+            "geometry": {
+                "type": "Polygon",
+                "coordinates": [[[-50, -10], [-40, 10], [-30, -10], [-50, -10]]],
+            },
+        },
+    ]
 
     geothing = MockGeo(features)
     assert list(read_features(geothing)) == features
@@ -325,11 +375,15 @@ def test_geointerface():
 
 # Optional tests
 def test_geodataframe():
-    try:
-        import geopandas as gpd
-        df = gpd.read_file(polygons)
-        if not hasattr(df, '__geo_interface__'):
-            pytest.skip("This version of geopandas doesn't support df.__geo_interface__")
-    except ImportError:
-        pytest.skip("Can't import geopands")
+    gpd = pytest.importorskip("geopandas")
+
+    df = gpd.read_file(polygons)
+    if not hasattr(df, "__geo_interface__"):
+        pytest.skip("This version of geopandas doesn't support df.__geo_interface__")
     assert list(read_features(df))
+
+
+# TODO # io.parse_features on a feature-only geo_interface
+# TODO # io.parse_features on a feature-only geojson-like object
+# TODO # io.read_features on a feature-only
+# TODO # io.Raster.read() on an open rasterio dataset

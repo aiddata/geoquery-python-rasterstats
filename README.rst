@@ -2,17 +2,16 @@ rasterstats
 ===========
 
 |BuildStatus|_
-|CoverageStatus|_
 
 ``rasterstats`` is a Python module for summarizing geospatial raster datasets based on vector geometries.
 It includes functions for **zonal statistics** and interpolated **point queries**. The command-line interface allows for
-easy interoperability with other GeoJSON tools. 
+easy interoperability with other GeoJSON tools.
 
 Documentation
 -------------
 For details on installation and usage, visit the documentation at `http://pythonhosted.org/rasterstats <http://pythonhosted.org/rasterstats/>`_.
 
-What does it do? 
+What does it do?
 ----------------
 Given a vector layer and a raster band, calculate the summary statistics of each vector geometry.
 For example, with a polygon vector layer and a digital elevation model (DEM) raster, compute the
@@ -25,39 +24,39 @@ mean elevation of each polygon.
 Command Line Quick Start
 ------------------------
 
-The command line interfaces to zonalstats and point_query 
+The command line interfaces to zonalstats and point_query
 are `rio` subcommands which read and write geojson features
 
 .. code-block:: bash
 
-    $ fio cat polygon.shp | rio zonalstats -r elevation.tif 
+    $ fio cat polygon.shp | rio zonalstats -r elevation.tif
 
     $ fio cat points.shp | rio pointquery -r elevation.tif
 
 See the `CLI Docs <http://pythonhosted.org/rasterstats/cli.html>`_. for more detail.
 
 Python Quick Start
------------
+------------------
 
 For zonal statistics
 
 .. code-block:: python
 
     >>> from rasterstats import zonal_stats
-    >>> stats = zonal_stats("tests/data/polygons.shp", "tests/data/elevation.tif")
-    >>> stats[1].keys()
-    ['count', 'min', 'max', 'mean']
+    >>> stats = zonal_stats("tests/data/polygons.shp", "tests/data/slope.tif")
+    >>> stats[0].keys()
+    dict_keys(['min', 'max', 'mean', 'count'])
     >>> [f['mean'] for f in stats]
-    [756.6057470703125, 114.660084635416666]
+    [14.660084635416666, 56.60576171875]
 
 and for point queries
 
 .. code-block:: python
 
     >>> from rasterstats import point_query
-    >>> point = "POINT(245309 1000064)"
-    >>> point_query(point, "tests/data/elevation.tif")
-    [723.9872347624]
+    >>> point = {'type': 'Point', 'coordinates': (245309.0, 1000064.0)}
+    >>> point_query(point, "tests/data/slope.tif")
+    [74.09817594635244]
 
 
 Issues
@@ -69,8 +68,5 @@ Find a bug? Report it via github issues by providing
 - python code or command to reproduce the error
 - information on your environment: versions of python, gdal and numpy and system memory
 
-.. |BuildStatus| image:: https://api.travis-ci.org/perrygeo/python-rasterstats.svg
-.. _BuildStatus: https://travis-ci.org/perrygeo/python-rasterstats
-
-.. |CoverageStatus| image:: https://coveralls.io/repos/github/perrygeo/python-rasterstats/badge.svg?branch=master
-.. _CoverageStatus: https://coveralls.io/github/perrygeo/python-rasterstats?branch=master
+.. |BuildStatus| image:: https://github.com/perrygeo/python-rasterstats/workflows/Rasterstats%20Python%20package/badge.svg
+.. _BuildStatus: https://github.com/perrygeo/python-rasterstats/actions
