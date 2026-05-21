@@ -8,6 +8,7 @@ from os import PathLike
 import fiona
 import numpy as np
 import rasterio
+import shapely
 from affine import Affine
 from fiona.errors import DriverError
 from rasterio.enums import MaskFlags
@@ -50,7 +51,7 @@ except ModuleNotFoundError:
 # pyogrio backend
 
 
-def _pyogrio_generator(obj, layer=0, chunk_size=24_000):
+def _pyogrio_generator(obj, layer=0, chunk_size=65535):
     """Yield GeoJSON-like Feature dicts using pyogrio, reading in chunks."""
     try:
         import pyogrio
@@ -67,26 +68,24 @@ def _pyogrio_generator(obj, layer=0, chunk_size=24_000):
 
     skip = 0
     while skip < total:
-        _meta, _fids, geom_wkb, field_data = pyogrio.raw.read(
+        _meta, _fids, geometries, field_data = pyogrio.raw.read(
             obj,
             layer=layer,
             skip_features=skip,
             max_features=chunk_size,
+            use_arrow=True,
         )
-        batch_size = len(geom_wkb)
+        batch_size = len(geometries)
+        geoms = shapely.from_wkb(geometries)
+        cols = [col.tolist() for col in field_data]
         for i in range(batch_size):
-            geom = wkb.loads(geom_wkb[i])
-            props = {
-                name: (
-                    field_data[j][i].item()
-                    if hasattr(field_data[j][i], "item")
-                    else field_data[j][i]
-                )
-                for j, name in enumerate(field_names)
-            }
+            props = {name: cols[j][i] for j, name in enumerate(field_names)}
             yield {
                 "type": "Feature",
-                "geometry": geom.__geo_interface__,
+                # converting to geom dict, only to convert back later?
+                # slight performance hit but it keeps the API identical.
+                # TODO optimize
+                "geometry": geoms[i].__geo_interface__,
                 "properties": props,
             }
         skip += batch_size
