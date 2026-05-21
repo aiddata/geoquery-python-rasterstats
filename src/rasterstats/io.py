@@ -83,10 +83,9 @@ def _pyogrio_generator(obj, layer=0, chunk_size=65536):
             props = {name: cols[j][i] for j, name in enumerate(field_names)}
             yield {
                 "type": "Feature",
-                # converting to geom dict, only to convert back later?
-                # slight performance hit but it keeps the API identical.
-                # TODO optimize
-                "geometry": geoms[i].__geo_interface__,
+                # cheat/optimize: return the shapely geometry
+                # instead of a true geojson-like dict
+                "geometry": geoms[i],
                 "properties": props,
             }
         skip += batch_size

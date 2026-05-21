@@ -4,6 +4,7 @@ import warnings
 
 import numpy as np
 from affine import Affine
+from shapely import Geometry
 from shapely.geometry import shape
 
 from rasterstats.io import Raster, read_features
@@ -187,7 +188,9 @@ def gen_zonal_stats(
     with Raster(raster, affine, nodata, band) as rast:
         features_iter = read_features(vectors, layer, engine=engine)
         for _, feat in enumerate(features_iter):
-            geom = shape(feat["geometry"])
+            geom = feat["geometry"]
+            if not isinstance(geom, Geometry):
+                geom = shape(geom)
 
             if "Point" in geom.geom_type:
                 geom = boxify_points(geom, rast)
