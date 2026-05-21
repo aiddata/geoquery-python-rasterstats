@@ -1,8 +1,9 @@
 """Benchmark fiona vs pyogrio as read backends for rasterstats.
 
 Generates N random point features inside the extent of tests/data/slope.tif,
-writes them to a temporary GeoJSON file, then times how long each engine takes
-to iterate over every feature via ``read_features``.
+writes them to a temporary GeoJSON file, converts it to a GeoPackage via
+ogr2ogr, then times how long each engine takes to iterate over every feature
+via ``read_features``.
 
 Usage
 -----
@@ -11,6 +12,7 @@ Usage
 
 import json
 import random
+import subprocess
 import sys
 import tempfile
 import time
@@ -47,12 +49,30 @@ def generate_geojson(path: Path, n: int) -> None:
         json.dump(fc, f)
 
 
-def time_engine(path: Path, engine: str, n: int) -> float:
+GPKG_LAYER = "features"
+
+
+def generate_gpkg(geojson_path: Path, gpkg_path: Path) -> None:
+    """Convert an existing GeoJSON file to GeoPackage using ogr2ogr."""
+    subprocess.run(
+        [
+            "ogr2ogr",
+            "-f", "GPKG",
+            "-nln", GPKG_LAYER,
+            str(gpkg_path),
+            str(geojson_path),
+        ],
+        check=True,
+        capture_output=True,
+    )
+
+
+def time_engine(path: Path, engine: str, n: int, layer=0) -> float:
     # Import here so the benchmark reflects real-world import cost only once
     from rasterstats.io import read_features
 
     t0 = time.perf_counter()
-    count = sum(1 for _ in read_features(str(path), engine=engine))
+    count = sum(1 for _ in read_features(str(path), layer=layer, engine=engine))
     elapsed = time.perf_counter() - t0
     assert count == n, f"Expected {n} features, got {count}"
     return elapsed
@@ -64,12 +84,20 @@ def main() -> None:
     print(f"Generating {n:,} random point features over {SLOPE_TIF.name} …")
     with tempfile.NamedTemporaryFile(suffix=".geojson", delete=False) as tmp:
         tmp_path = Path(tmp.name)
+    gpkg_path = Path(tempfile.mktemp(suffix=".gpkg"))
 
     try:
         generate_geojson(tmp_path, n)
         file_mb = tmp_path.stat().st_size / 1024 / 1024
-        print(f"Wrote {file_mb:.1f} MB → {tmp_path}\n")
+        print(f"Wrote GeoJSON    {file_mb:.1f} MB → {tmp_path}")
 
+        print("Converting to GeoPackage via ogr2ogr …")
+        generate_gpkg(tmp_path, gpkg_path)
+        gpkg_mb = gpkg_path.stat().st_size / 1024 / 1024
+        print(f"Wrote GeoPackage {gpkg_mb:.1f} MB → {gpkg_path}\n")
+
+        # --- GeoJSON benchmark ---
+        print("=== GeoJSON ===")
         fiona_secs = time_engine(tmp_path, "fiona", n)
         print(f"fiona  : {fiona_secs:.3f}s  ({n / fiona_secs:,.0f} feat/s)")
 
@@ -80,12 +108,30 @@ def main() -> None:
             print(f"pyogrio: {pyogrio_secs:.3f}s  ({n / pyogrio_secs:,.0f} feat/s)")
             ratio = fiona_secs / pyogrio_secs
             faster = "pyogrio" if ratio > 1 else "fiona"
-            print(f"\n{faster} is {max(ratio, 1/ratio):.2f}x faster")
+            print(f"\n{faster} is {max(ratio, 1 / ratio):.2f}x faster (GeoJSON)")
         except ImportError:
             print("pyogrio not installed - skipping pyogrio benchmark")
             print("Install with: pip install rasterstats[pyogrio]")
+
+        # --- GeoPackage benchmark ---
+        print("\n=== GeoPackage ===")
+        fiona_gpkg_secs = time_engine(gpkg_path, "fiona", n, layer=GPKG_LAYER)
+        print(f"fiona  : {fiona_gpkg_secs:.3f}s  ({n / fiona_gpkg_secs:,.0f} feat/s)")
+
+        try:
+            import pyogrio  # noqa: F401
+
+            pyogrio_gpkg_secs = time_engine(gpkg_path, "pyogrio", n, layer=GPKG_LAYER)
+            print(f"pyogrio: {pyogrio_gpkg_secs:.3f}s  ({n / pyogrio_gpkg_secs:,.0f} feat/s)")
+            ratio = fiona_gpkg_secs / pyogrio_gpkg_secs
+            faster = "pyogrio" if ratio > 1 else "fiona"
+            print(f"\n{faster} is {max(ratio, 1 / ratio):.2f}x faster (GeoPackage)")
+        except ImportError:
+            pass  # already reported above in the GeoJSON block
+
     finally:
         tmp_path.unlink(missing_ok=True)
+        gpkg_path.unlink(missing_ok=True)
 
 
 if __name__ == "__main__":

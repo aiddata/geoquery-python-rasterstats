@@ -51,7 +51,7 @@ except ModuleNotFoundError:
 # pyogrio backend
 
 
-def _pyogrio_generator(obj, layer=0, chunk_size=65535):
+def _pyogrio_generator(obj, layer=0, chunk_size=65536):
     """Yield GeoJSON-like Feature dicts using pyogrio, reading in chunks."""
     try:
         import pyogrio
@@ -73,7 +73,8 @@ def _pyogrio_generator(obj, layer=0, chunk_size=65535):
             layer=layer,
             skip_features=skip,
             max_features=chunk_size,
-            use_arrow=True,
+            # Note do not use_arrow=True, reads all records into mem
+            # https://pyogrio.readthedocs.io/en/latest/about.html#how-it-works
         )
         batch_size = len(geometries)
         geoms = shapely.from_wkb(geometries)
