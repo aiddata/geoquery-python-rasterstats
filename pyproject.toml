@@ -23,6 +23,8 @@ classifiers = [
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Topic :: Utilities",
     "Topic :: Scientific/Engineering :: GIS",
 ]
@@ -31,7 +33,10 @@ dependencies = [
     "affine",
     "click >7.1, !=8.2.1",
     "cligj >=0.4",
-    "fiona",
+    # TODO either fiona OR pyogrio is required, which should be the default?
+    # fiona -> backward compatible but won't have support for 3.14+ binaries
+    # pyogrio -> initial tests show poor performance (3x slower), need to tune,
+    #            otherwise would introduce a bad performance regression.
     "numpy >=1.9",
     "rasterio >=1.0",
     "simplejson",
@@ -41,6 +46,12 @@ dependencies = [
 [project.optional-dependencies]
 progress = [
     "tqdm"
+]
+fiona = [
+    "fiona"
+]
+pyogrio = [
+    "pyogrio"
 ]
 docs = [
     "numpydoc",
@@ -56,7 +67,7 @@ test = [
     "simplejson",
 ]
 dev = [
-    "rasterstats[test]",
+    "rasterstats[test,fiona,pyogrio]",
     "ruff",
     "twine",
 ]

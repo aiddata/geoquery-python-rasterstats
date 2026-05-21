@@ -29,20 +29,102 @@ geom_types = [
     "MultiPolygon",
 ]
 
+# Fiona backend
+
 try:
     # Fiona 1.9+
     import fiona.model
 
-    def fiona_generator(obj, layer=0):
+    def _fiona_generator(obj, layer=0):
         with fiona.open(obj, "r", layer=layer) as src:
             for feat in src:
                 yield fiona.model.to_dict(feat)
 
 except ModuleNotFoundError:
     # Fiona <1.9
-    def fiona_generator(obj, layer=0):
+    def _fiona_generator(obj, layer=0):
         with fiona.open(obj, "r", layer=layer) as src:
             yield from src
+
+
+# pyogrio backend
+
+
+def _pyogrio_generator(obj, layer=0, chunk_size=24_000):
+    """Yield GeoJSON-like Feature dicts using pyogrio, reading in chunks."""
+    try:
+        import pyogrio
+        import pyogrio.raw
+    except ImportError as e:
+        raise ImportError(
+            "pyogrio is required for engine='pyogrio'. "
+            "Install it with: pip install rasterstats[pyogrio]"
+        ) from e
+
+    info = pyogrio.read_info(obj, layer=layer)
+    total = info["features"]
+    field_names = list(info["fields"])
+
+    skip = 0
+    while skip < total:
+        _meta, _fids, geom_wkb, field_data = pyogrio.raw.read(
+            obj,
+            layer=layer,
+            skip_features=skip,
+            max_features=chunk_size,
+        )
+        batch_size = len(geom_wkb)
+        for i in range(batch_size):
+            geom = wkb.loads(geom_wkb[i])
+            props = {
+                name: (
+                    field_data[j][i].item()
+                    if hasattr(field_data[j][i], "item")
+                    else field_data[j][i]
+                )
+                for j, name in enumerate(field_names)
+            }
+            yield {
+                "type": "Feature",
+                "geometry": geom.__geo_interface__,
+                "properties": props,
+            }
+        skip += batch_size
+        if batch_size < chunk_size:
+            break
+
+
+# Public dispatcher
+
+
+def feature_generator(obj, layer=0, engine=None):
+    """Yield GeoJSON-like Feature dicts from a file-based vector source.
+
+    Parameters
+    ----------
+    obj : str or PathLike
+        Path to a vector data source supported by fiona or pyogrio.
+    layer : int or str, optional
+        Layer index or name (default: 0).
+    engine : {"fiona", "pyogrio"} or None, optional
+        Backend to use for reading.  ``None`` and ``"fiona"`` both select
+        the fiona backend.  Pass ``"pyogrio"`` explicitly to use pyogrio.
+
+    Yields
+    ------
+    dict
+        GeoJSON-like Feature dicts.
+    """
+    if engine is None or engine == "fiona":
+        yield from _fiona_generator(obj, layer=layer)
+    elif engine == "pyogrio":
+        yield from _pyogrio_generator(obj, layer=layer)
+    else:
+        raise ValueError(f"Unknown engine {engine!r}. Choose 'fiona' or 'pyogrio'.")
+
+
+# Backward-compatible alias
+fiona_generator = feature_generator
 
 
 def wrap_geom(geom):
@@ -89,7 +171,7 @@ def parse_feature(obj):
     raise ValueError(f"Can't parse {obj} as a geojson Feature object")
 
 
-def read_features(obj, layer=0):
+def read_features(obj, layer=0, engine=None):
     features_iter = None
     if isinstance(obj, (str, PathLike)):
         obj = str(obj)
@@ -98,7 +180,7 @@ def read_features(obj, layer=0):
             with fiona.open(obj, "r", layer=layer) as src:
                 assert len(src) > 0
 
-            features_iter = fiona_generator(obj, layer)
+            features_iter = feature_generator(obj, layer, engine=engine)
         except (
             AssertionError,
             DriverError,

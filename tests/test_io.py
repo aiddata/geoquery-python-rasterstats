@@ -11,6 +11,7 @@ from rasterstats.io import (  # todo parse_feature
     Raster,
     boundless_array,
     bounds_window,
+    feature_generator,
     fiona_generator,
     read_featurecollection,
     read_features,
@@ -370,7 +371,60 @@ def test_geointerface():
     assert list(read_features(geothing)) == features
 
 
+# feature_generator / engine tests
+
+
+def test_feature_generator_fiona_default():
+    """feature_generator with no engine= uses fiona and matches target."""
+    result = list(feature_generator(polygons))
+    assert result == target_features
+
+
+def test_feature_generator_explicit_fiona():
+    """feature_generator with engine='fiona' matches target."""
+    result = list(feature_generator(polygons, engine="fiona"))
+    assert result == target_features
+
+
+def test_feature_generator_pyogrio():
+    """feature_generator with engine='pyogrio' yields same geometries."""
+    pytest.importorskip("pyogrio")
+    result = list(feature_generator(polygons, engine="pyogrio"))
+    geoms = [shape(f["geometry"]) for f in result]
+    _compare_geomlists(geoms, target_geoms)
+
+
+def test_feature_generator_pyogrio_properties():
+    """pyogrio engine preserves feature properties."""
+    pytest.importorskip("pyogrio")
+    result = list(feature_generator(polygons, engine="pyogrio"))
+    assert all("properties" in f for f in result)
+    assert all("id" in f["properties"] for f in result)
+
+
+def test_feature_generator_invalid_engine():
+    """An unrecognised engine name raises ValueError."""
+    with pytest.raises(ValueError, match="Unknown engine"):
+        list(feature_generator(polygons, engine="gdal"))
+
+
+def test_fiona_generator_alias():
+    """fiona_generator is still importable and works as a backward-compat alias."""
+    result = list(fiona_generator(polygons))
+    assert result == target_features
+
+
+def test_read_features_pyogrio_engine():
+    """read_features forwards engine= to the underlying generator."""
+    pytest.importorskip("pyogrio")
+    result = list(read_features(polygons, engine="pyogrio"))
+    geoms = [shape(f["geometry"]) for f in result]
+    _compare_geomlists(geoms, target_geoms)
+
+
 # Optional tests
+
+
 def test_geodataframe():
     gpd = pytest.importorskip("geopandas")
 
