@@ -1,9 +1,9 @@
 """Benchmark fiona vs pyogrio as read backends for rasterstats.
 
 Generates N random point features inside the extent of tests/data/slope.tif,
-writes them to a temporary GeoJSON file, converts it to a GeoPackage via
-ogr2ogr, then times how long each engine takes to iterate over every feature
-via ``read_features``.
+writes them to a temporary GeoJSON file, converts it to GeoPackage, Shapefile,
+and Parquet via ogr2ogr, then times how long each engine takes to iterate over
+every feature via ``read_features``.
 
 Usage
 -----
@@ -12,6 +12,7 @@ Usage
 
 import json
 import random
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -50,6 +51,7 @@ def generate_geojson(path: Path, n: int) -> None:
 
 
 GPKG_LAYER = "features"
+SHP_LAYER = "features"
 
 
 def generate_gpkg(geojson_path: Path, gpkg_path: Path) -> None:
@@ -60,6 +62,39 @@ def generate_gpkg(geojson_path: Path, gpkg_path: Path) -> None:
             "-f", "GPKG",
             "-nln", GPKG_LAYER,
             str(gpkg_path),
+            str(geojson_path),
+        ],
+        check=True,
+        capture_output=True,
+    )
+
+
+def generate_shp(geojson_path: Path, shp_dir: Path) -> None:
+    """Convert an existing GeoJSON file to ESRI Shapefile using ogr2ogr.
+
+    ogr2ogr writes a directory of sidecar files (.shp, .dbf, .shx, .prj)
+    so ``shp_dir`` must be a directory path that does not yet exist.
+    """
+    subprocess.run(
+        [
+            "ogr2ogr",
+            "-f", "ESRI Shapefile",
+            "-nln", SHP_LAYER,
+            str(shp_dir),
+            str(geojson_path),
+        ],
+        check=True,
+        capture_output=True,
+    )
+
+
+def generate_parquet(geojson_path: Path, parquet_path: Path) -> None:
+    """Convert an existing GeoJSON file to Parquet using ogr2ogr."""
+    subprocess.run(
+        [
+            "ogr2ogr",
+            "-f", "Parquet",
+            str(parquet_path),
             str(geojson_path),
         ],
         check=True,
@@ -85,6 +120,8 @@ def main() -> None:
     with tempfile.NamedTemporaryFile(suffix=".geojson", delete=False) as tmp:
         tmp_path = Path(tmp.name)
     gpkg_path = Path(tempfile.mktemp(suffix=".gpkg"))
+    shp_dir = Path(tempfile.mkdtemp())
+    parquet_path = Path(tempfile.mktemp(suffix=".parquet"))
 
     try:
         generate_geojson(tmp_path, n)
@@ -94,7 +131,17 @@ def main() -> None:
         print("Converting to GeoPackage via ogr2ogr …")
         generate_gpkg(tmp_path, gpkg_path)
         gpkg_mb = gpkg_path.stat().st_size / 1024 / 1024
-        print(f"Wrote GeoPackage {gpkg_mb:.1f} MB → {gpkg_path}\n")
+        print(f"Wrote GeoPackage {gpkg_mb:.1f} MB → {gpkg_path}")
+
+        print("Converting to Shapefile via ogr2ogr …")
+        generate_shp(tmp_path, shp_dir)
+        shp_mb = sum(f.stat().st_size for f in shp_dir.rglob("*") if f.is_file()) / 1024 / 1024
+        print(f"Wrote Shapefile  {shp_mb:.1f} MB → {shp_dir}")
+
+        print("Converting to Parquet via ogr2ogr …")
+        generate_parquet(tmp_path, parquet_path)
+        parquet_mb = parquet_path.stat().st_size / 1024 / 1024
+        print(f"Wrote Parquet    {parquet_mb:.1f} MB → {parquet_path}\n")
 
         # --- GeoJSON benchmark ---
         print("=== GeoJSON ===")
@@ -129,9 +176,44 @@ def main() -> None:
         except ImportError:
             pass  # already reported above in the GeoJSON block
 
+        # --- Shapefile benchmark ---
+        shp_path = shp_dir / (SHP_LAYER + ".shp")
+        print("\n=== Shapefile ===")
+        fiona_shp_secs = time_engine(shp_path, "fiona", n, layer=SHP_LAYER)
+        print(f"fiona  : {fiona_shp_secs:.3f}s  ({n / fiona_shp_secs:,.0f} feat/s)")
+
+        try:
+            import pyogrio  # noqa: F401
+
+            pyogrio_shp_secs = time_engine(shp_path, "pyogrio", n, layer=SHP_LAYER)
+            print(f"pyogrio: {pyogrio_shp_secs:.3f}s  ({n / pyogrio_shp_secs:,.0f} feat/s)")
+            ratio = fiona_shp_secs / pyogrio_shp_secs
+            faster = "pyogrio" if ratio > 1 else "fiona"
+            print(f"\n{faster} is {max(ratio, 1 / ratio):.2f}x faster (Shapefile)")
+        except ImportError:
+            pass  # already reported above in the GeoJSON block
+
+        # --- Parquet benchmark ---
+        print("\n=== Parquet ===")
+        fiona_parquet_secs = time_engine(parquet_path, "fiona", n, layer=0)
+        print(f"fiona  : {fiona_parquet_secs:.3f}s  ({n / fiona_parquet_secs:,.0f} feat/s)")
+
+        try:
+            import pyogrio  # noqa: F401
+
+            pyogrio_parquet_secs = time_engine(parquet_path, "pyogrio", n, layer=0)
+            print(f"pyogrio: {pyogrio_parquet_secs:.3f}s  ({n / pyogrio_parquet_secs:,.0f} feat/s)")
+            ratio = fiona_parquet_secs / pyogrio_parquet_secs
+            faster = "pyogrio" if ratio > 1 else "fiona"
+            print(f"\n{faster} is {max(ratio, 1 / ratio):.2f}x faster (Parquet)")
+        except ImportError:
+            pass  # already reported above in the GeoJSON block
+
     finally:
         tmp_path.unlink(missing_ok=True)
         gpkg_path.unlink(missing_ok=True)
+        shutil.rmtree(shp_dir, ignore_errors=True)
+        parquet_path.unlink(missing_ok=True)
 
 
 if __name__ == "__main__":
