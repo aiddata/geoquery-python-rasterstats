@@ -1,7 +1,6 @@
 import json
 from pathlib import Path
 
-import fiona
 import numpy as np
 import pytest
 import rasterio
@@ -29,7 +28,7 @@ arr3d = np.array([[[1, 1, 1], [1, 1, 1], [1, 1, 1]]])
 
 eps = 1e-6
 
-target_features = [f for f in fiona_generator(polygons)]
+target_features = list(feature_generator(polygons))
 
 target_geoms = [shape(f["geometry"]) for f in target_features]
 
@@ -53,16 +52,24 @@ def _test_read_features_single(indata):
 
 
 def test_fiona_path():
-    assert list(read_features(polygons)) == target_features
+    """read_features on a path uses pyogrio default; geometries match."""
+    features = list(read_features(polygons))
+    geoms = [shape(f["geometry"]) for f in features]
+    _compare_geomlists(geoms, target_geoms)
 
 
 def test_layer_index():
+    fiona = pytest.importorskip("fiona")
     layer = fiona.listlayers(data_dir).index("polygons")
-    assert list(read_features(data_dir, layer=layer)) == target_features
+    result = list(read_features(data_dir, layer=layer))
+    geoms = [shape(f["geometry"]) for f in result]
+    _compare_geomlists(geoms, target_geoms)
 
 
 def test_layer_name():
-    assert list(read_features(data_dir, layer="polygons")) == target_features
+    result = list(read_features(data_dir, layer="polygons"))
+    geoms = [shape(f["geometry"]) for f in result]
+    _compare_geomlists(geoms, target_geoms)
 
 
 def test_path_unicode():
@@ -71,75 +78,78 @@ def test_path_unicode():
     except NameError:
         # python3, it's already unicode
         upolygons = polygons
-    assert list(read_features(upolygons)) == target_features
+    result = list(read_features(upolygons))
+    geoms = [shape(f["geometry"]) for f in result]
+    _compare_geomlists(geoms, target_geoms)
 
 
 def test_featurecollection():
-    assert (
-        read_featurecollection(polygons)["features"]
-        == list(read_features(polygons))
-        == target_features
-    )
+    fc_features = read_featurecollection(polygons)["features"]
+    rf_features = list(read_features(polygons))
+    geoms_fc = [shape(f["geometry"]) for f in fc_features]
+    geoms_rf = [shape(f["geometry"]) for f in rf_features]
+    _compare_geomlists(geoms_fc, target_geoms)
+    _compare_geomlists(geoms_rf, target_geoms)
 
 
 def test_shapely():
-    indata = [shape(f["geometry"]) for f in fiona_generator(polygons)]
+    indata = [shape(f["geometry"]) for f in feature_generator(polygons)]
     _test_read_features(indata)
     _test_read_features_single(indata[0])
 
 
 def test_wkt():
-    indata = [shape(f["geometry"]).wkt for f in fiona_generator(polygons)]
+    indata = [shape(f["geometry"]).wkt for f in feature_generator(polygons)]
     _test_read_features(indata)
     _test_read_features_single(indata[0])
 
 
 def test_wkb():
-    indata = [shape(f["geometry"]).wkb for f in fiona_generator(polygons)]
+    indata = [shape(f["geometry"]).wkb for f in feature_generator(polygons)]
     _test_read_features(indata)
     _test_read_features_single(indata[0])
 
 
 def test_mapping_features():
     # list of Features
-    indata = [f for f in fiona_generator(polygons)]
+    indata = list(feature_generator(polygons))
     _test_read_features(indata)
 
 
 def test_mapping_feature():
     # list of Features
-    indata = [f for f in fiona_generator(polygons)]
+    indata = list(feature_generator(polygons))
     _test_read_features(indata[0])
 
 
 def test_mapping_geoms():
-    indata = [f for f in fiona_generator(polygons)]
+    indata = list(feature_generator(polygons))
     _test_read_features(indata[0]["geometry"])
 
 
 def test_mapping_collection():
     indata = {"type": "FeatureCollection"}
-    indata["features"] = [f for f in fiona_generator(polygons)]
+    indata["features"] = list(feature_generator(polygons))
     _test_read_features(indata)
 
 
 def test_jsonstr():
     # Feature str
-    indata = [f for f in fiona_generator(polygons)]
+    indata = list(feature_generator(polygons))
     indata = json.dumps(indata[0])
     _test_read_features(indata)
 
 
 def test_jsonstr_geom():
     # geojson geom str
-    indata = [f for f in fiona_generator(polygons)]
+    indata = list(feature_generator(polygons))
     indata = json.dumps(indata[0]["geometry"])
     _test_read_features(indata)
 
 
 def test_jsonstr_collection():
     indata = {"type": "FeatureCollection"}
-    indata["features"] = [f for f in fiona_generator(polygons)]
+    indata["features"] = list(feature_generator(polygons))
     indata = json.dumps(indata)
     _test_read_features(indata)
 
@@ -164,19 +174,19 @@ class MockGeoInterface:
 
 
 def test_geo_interface():
-    indata = [MockGeoInterface(f) for f in fiona_generator(polygons)]
+    indata = [MockGeoInterface(f) for f in feature_generator(polygons)]
     _test_read_features(indata)
 
 
 def test_geo_interface_geom():
-    indata = [MockGeoInterface(f["geometry"]) for f in fiona_generator(polygons)]
+    indata = [MockGeoInterface(f["geometry"]) for f in feature_generator(polygons)]
     _test_read_features(indata)
 
 
 def test_geo_interface_collection():
     # geointerface for featurecollection?
     indata = {"type": "FeatureCollection"}
-    indata["features"] = [f for f in fiona_generator(polygons)]
+    indata["features"] = list(feature_generator(polygons))
     indata = MockGeoInterface(indata)
     _test_read_features(indata)
 
@@ -374,16 +384,19 @@ def test_geointerface():
 # feature_generator / engine tests
 
 
-def test_feature_generator_fiona_default():
-    """feature_generator with no engine= uses fiona and matches target."""
+def test_feature_generator_pyogrio_default():
+    """feature_generator with no engine= uses pyogrio (new default)."""
     result = list(feature_generator(polygons))
-    assert result == target_features
+    geoms = [shape(f["geometry"]) for f in result]
+    _compare_geomlists(geoms, target_geoms)
 
 
 def test_feature_generator_explicit_fiona():
-    """feature_generator with engine='fiona' matches target."""
+    """feature_generator with engine='fiona' yields correct geometries."""
+    pytest.importorskip("fiona")
     result = list(feature_generator(polygons, engine="fiona"))
-    assert result == target_features
+    geoms = [shape(f["geometry"]) for f in result]
+    _compare_geomlists(geoms, target_geoms)
 
 
 def test_feature_generator_pyogrio():
@@ -409,9 +422,11 @@ def test_feature_generator_invalid_engine():
 
 
 def test_fiona_generator_alias():
-    """fiona_generator is still importable and works as a backward-compat alias."""
-    result = list(fiona_generator(polygons))
-    assert result == target_features
+    """fiona_generator backward-compat alias still works when fiona is installed."""
+    pytest.importorskip("fiona")
+    result = list(fiona_generator(polygons, engine="fiona"))
+    geoms = [shape(f["geometry"]) for f in result]
+    _compare_geomlists(geoms, target_geoms)
 
 
 def test_read_features_pyogrio_engine():
