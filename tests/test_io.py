@@ -11,7 +11,6 @@ from rasterstats.io import (  # todo parse_feature
     boundless_array,
     bounds_window,
     feature_generator,
-    fiona_generator,
     read_featurecollection,
     read_features,
     rowcol,
@@ -421,20 +420,70 @@ def test_feature_generator_invalid_engine():
         list(feature_generator(polygons, engine="gdal"))
 
 
-def test_fiona_generator_alias():
-    """fiona_generator backward-compat alias still works when fiona is installed."""
-    pytest.importorskip("fiona")
-    result = list(fiona_generator(polygons, engine="fiona"))
-    geoms = [shape(f["geometry"]) for f in result]
-    _compare_geomlists(geoms, target_geoms)
-
-
 def test_read_features_pyogrio_engine():
     """read_features forwards engine= to the underlying generator."""
     pytest.importorskip("pyogrio")
     result = list(read_features(polygons, engine="pyogrio"))
     geoms = [shape(f["geometry"]) for f in result]
     _compare_geomlists(geoms, target_geoms)
+
+
+def test_pyogrio_null_geometry(tmp_path):
+    """_pyogrio_generator yields None geometry for features with null geometry
+    rather than raising AttributeError."""
+    geojson = {
+        "type": "FeatureCollection",
+        "features": [
+            {"type": "Feature", "geometry": {"type": "Point", "coordinates": [0, 0]}, "properties": {"n": 1}},
+            {"type": "Feature", "geometry": None, "properties": {"n": 2}},
+            {"type": "Feature", "geometry": {"type": "Point", "coordinates": [1, 1]}, "properties": {"n": 3}},
+        ],
+    }
+    p = tmp_path / "null_geom.geojson"
+    p.write_text(json.dumps(geojson))
+
+    results = list(feature_generator(str(p), engine="pyogrio"))
+    assert len(results) == 3
+    assert results[0]["geometry"] is not None
+    assert results[1]["geometry"] is None
+    assert results[2]["geometry"] is not None
+    assert results[1]["properties"]["n"] == 2
+
+
+def test_pyogrio_unknown_feature_count(tmp_path, monkeypatch):
+    """_pyogrio_generator reads all features when read_info returns features=-1.
+
+    Some GDAL drivers (e.g. WFS) cannot report feature count ahead of time and
+    return -1.  The old ``while skip < total`` loop silently yielded nothing in
+    this case.  The new unconditional loop must still yield all features.
+    """
+    import pyogrio
+
+    geojson = {
+        "type": "FeatureCollection",
+        "features": [
+            {"type": "Feature", "geometry": {"type": "Point", "coordinates": [float(i), 0.0]}, "properties": {"n": i}}
+            for i in range(5)
+        ],
+    }
+    p = tmp_path / "unknown_count.geojson"
+    p.write_text(json.dumps(geojson))
+
+    real_read_info = pyogrio.read_info
+
+    def fake_read_info(path, **kwargs):
+        info = real_read_info(path, **kwargs)
+        info["features"] = -1
+        return info
+
+    monkeypatch.setattr(pyogrio, "read_info", fake_read_info)
+    # Also patch the name used inside the io module
+    import rasterstats.io as io_mod
+    monkeypatch.setattr(io_mod, "pyogrio", pyogrio)
+
+    results = list(feature_generator(str(p), engine="pyogrio"))
+    assert len(results) == 5
+    assert [f["properties"]["n"] for f in results] == list(range(5))
 
 
 # Optional tests

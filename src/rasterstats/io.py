@@ -7,6 +7,7 @@ from os import PathLike
 
 import numpy as np
 import pyogrio
+import pyogrio.raw
 import rasterio
 import shapely
 from affine import Affine
@@ -61,21 +62,15 @@ def _fiona_generator(obj, layer=0):
 
 def _pyogrio_generator(obj, layer=0, chunk_size=65536):
     """Yield GeoJSON-like Feature dicts using pyogrio, reading in chunks."""
-    try:
-        import pyogrio
-        import pyogrio.raw
-    except ImportError as e:
-        raise ImportError(
-            "pyogrio is required for engine='pyogrio'. "
-            "Install it with: pip install rasterstats[pyogrio]"
-        ) from e
-
     info = pyogrio.read_info(obj, layer=layer)
-    total = info["features"]
     field_names = list(info["fields"])
 
+    # Some sources advertise `info["features"]" == -1` (WFS, certain VRT sources).
+    # ie they don't support *fast* feature counting, thus return -1
+    # But they *do* support iteration, which is all we need.
+
     skip = 0
-    while skip < total:
+    while True:
         _meta, _fids, geometries, field_data = pyogrio.raw.read(
             obj,
             layer=layer,
@@ -89,9 +84,10 @@ def _pyogrio_generator(obj, layer=0, chunk_size=65536):
         cols = [col.tolist() for col in field_data]
         for i in range(batch_size):
             props = {name: cols[j][i] for j, name in enumerate(field_names)}
+            geom = geoms[i]
             yield {
                 "type": "Feature",
-                "geometry": geoms[i].__geo_interface__,
+                "geometry": geom.__geo_interface__ if geom is not None else None,
                 "properties": props,
             }
         skip += batch_size
@@ -130,10 +126,6 @@ def feature_generator(obj, layer=0, engine=None):
         yield from _fiona_generator(obj, layer=layer)
     else:
         raise ValueError(f"Unknown engine {resolved!r}. Choose 'pyogrio' or 'fiona'.")
-
-
-# Backward-compatible alias
-fiona_generator = feature_generator
 
 
 def wrap_geom(geom):
