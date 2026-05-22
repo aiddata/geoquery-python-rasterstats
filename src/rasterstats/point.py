@@ -109,6 +109,7 @@ def gen_point_query(
     property_name="value",
     geojson_out=False,
     boundless=True,
+    engine=None,
 ):
     """
     Given a set of vector features and a raster,
@@ -161,6 +162,12 @@ def gen_point_query(
         Allow features that extend beyond the raster dataset's extent, default: True
         Cells outside dataset extents are treated as nodata.
 
+    engine : {"pyogrio", "fiona"} or None, optional
+        Backend to use when reading file-based vector sources.
+        ``None`` selects the default engine (``"pyogrio"``).
+        Pass ``"fiona"`` to opt in to the fiona backend
+        (requires ``pip install rasterstats[fiona]``).
+
     Returns
     -------
     generator of arrays (if ``geojson_out`` is False)
@@ -169,7 +176,7 @@ def gen_point_query(
     if interpolate not in ["nearest", "bilinear"]:
         raise ValueError("interpolate must be nearest or bilinear")
 
-    features_iter = read_features(vectors, layer)
+    features_iter = read_features(vectors, layer, engine=engine)
 
     with Raster(raster, nodata=nodata, affine=affine, band=band) as rast:
         for feat in features_iter:
