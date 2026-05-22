@@ -91,6 +91,7 @@ select = [
   "UP",  # pyupgrade
 ]
 ignore = [
+  "E501",   # Disable: line too long
   "RUF005", # Disable: Consider iterable unpacking instead of concatenation
 ]
 
