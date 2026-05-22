@@ -147,10 +147,11 @@ def gen_zonal_stats(
         Allow features that extend beyond the raster dataset's extent, default: True
         Cells outside dataset extents are treated as nodata.
 
-    engine : {"fiona", "pyogrio"} or None, optional
+    engine : {"pyogrio", "fiona"} or None, optional
         Backend to use when reading file-based vector sources.
-        ``None`` or ``"fiona"`` (the default) both select the fiona backend.
-        Pass ``"pyogrio"`` to use pyogrio explicitly.
+        ``None`` selects the default engine (``"pyogrio"``).
+        Pass ``"fiona"`` to opt in to the fiona backend
+        (requires ``pip install rasterstats[fiona]``).
 
     Returns
     -------
