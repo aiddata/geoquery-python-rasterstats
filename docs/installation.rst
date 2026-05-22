@@ -1,19 +1,37 @@
 Installation
 ============
 
-Depends on libgdal, rasterio, fiona, shapely and numpy
+Depends on libgdal, rasterio, fiona, shapely and numpy.
 
-Using Ubuntu 14.04::
+Using ``uv`` (recommended)::
 
-   sudo apt-get install python-numpy libgdal1h gdal-bin libgdal-dev
-   pip install rasterstats
+    uv add rasterstats
 
-Or homebrew on OS X::
+Or with pip::
+
+    pip install rasterstats
+
+Platform-specific GDAL setup
+-----------------------------
+
+**Ubuntu**::
+
+    sudo apt-get install libgdal-dev gdal-bin
+
+then install rasterstats as above.
+
+**macOS** (Homebrew)::
 
     brew install gdal
-    pip install rasterstats
 
-For Windows, follow the `rasterio installation <https://github.com/mapbox/rasterio#windows-1>`_ and then run::
+then install rasterstats as above.
 
-    pip install rasterstats
+**Windows**: follow the `rasterio installation <https://github.com/mapbox/rasterio#windows-1>`_,
+then install rasterstats as above.
 
+Tests
+-----
+
+To run the python unit tests
+
+    uv run pytest
