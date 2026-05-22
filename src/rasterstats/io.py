@@ -6,6 +6,7 @@ from json import JSONDecodeError
 from os import PathLike
 
 import numpy as np
+import pyogrio
 import rasterio
 import shapely
 from affine import Affine
@@ -188,13 +189,10 @@ def _is_vector_file(path, layer):
     non-empty (True).
     """
     try:
-        import pyogrio
-
         info = pyogrio.read_info(path, layer=layer)
-        # -1 means the driver cannot report a count; treat as non-empty
-        return info["features"] != 0
     except Exception:
         return False
+    return info["features"] != 0
 
 
 def read_features(obj, layer=0, engine=None):
