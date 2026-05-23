@@ -34,17 +34,9 @@ geom_types = [
 
 
 def _fiona_generator(obj, layer=0):
-    """Yield GeoJSON-like Feature dicts using fiona (optional engine).
+    """Yield GeoJSON-like Feature dicts using fiona (optional engine)."""
+    import fiona
 
-    Raises ImportError with a helpful message if fiona is not installed.
-    """
-    try:
-        import fiona
-    except ImportError:
-        raise ImportError(
-            "fiona is required for engine='fiona'. "
-            "Install it with: pip install rasterstats[fiona]"
-        )
     try:
         import fiona.model
 
