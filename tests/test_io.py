@@ -2,12 +2,14 @@ import json
 from pathlib import Path
 
 import numpy as np
+import pyogrio
 import pytest
 import rasterio
 from shapely.geometry import shape
 
 from rasterstats.io import (  # todo parse_feature
     Raster,
+    _is_vector_file,
     boundless_array,
     bounds_window,
     feature_generator,
@@ -434,9 +436,17 @@ def test_pyogrio_null_geometry(tmp_path):
     geojson = {
         "type": "FeatureCollection",
         "features": [
-            {"type": "Feature", "geometry": {"type": "Point", "coordinates": [0, 0]}, "properties": {"n": 1}},
+            {
+                "type": "Feature",
+                "geometry": {"type": "Point", "coordinates": [0, 0]},
+                "properties": {"n": 1},
+            },
             {"type": "Feature", "geometry": None, "properties": {"n": 2}},
-            {"type": "Feature", "geometry": {"type": "Point", "coordinates": [1, 1]}, "properties": {"n": 3}},
+            {
+                "type": "Feature",
+                "geometry": {"type": "Point", "coordinates": [1, 1]},
+                "properties": {"n": 3},
+            },
         ],
     }
     p = tmp_path / "null_geom.geojson"
@@ -462,7 +472,11 @@ def test_pyogrio_unknown_feature_count(tmp_path, monkeypatch):
     geojson = {
         "type": "FeatureCollection",
         "features": [
-            {"type": "Feature", "geometry": {"type": "Point", "coordinates": [float(i), 0.0]}, "properties": {"n": i}}
+            {
+                "type": "Feature",
+                "geometry": {"type": "Point", "coordinates": [float(i), 0.0]},
+                "properties": {"n": i},
+            }
             for i in range(5)
         ],
     }
@@ -479,11 +493,34 @@ def test_pyogrio_unknown_feature_count(tmp_path, monkeypatch):
     monkeypatch.setattr(pyogrio, "read_info", fake_read_info)
     # Also patch the name used inside the io module
     import rasterstats.io as io_mod
+
     monkeypatch.setattr(io_mod, "pyogrio", pyogrio)
 
     results = list(feature_generator(str(p), engine="pyogrio"))
     assert len(results) == 5
     assert [f["properties"]["n"] for f in results] == list(range(5))
+
+
+# Test detection of vector files
+# Private function but deserves unit tests
+
+
+def test_is_vector_file():
+    assert _is_vector_file(polygons, "polygons")
+
+
+def test_wrong_vector_layer():
+    "Data source is fine. DataLayerErrors pass through to fail fast."
+    with pytest.raises(pyogrio.errors.DataLayerError):
+        _is_vector_file(polygons, "something-else")
+
+
+def test_isnt_vector_file():
+    assert not _is_vector_file(raster, "raster")
+
+
+def test_is_absent_file():
+    assert not _is_vector_file("/tmp/sdfjaohgoadfknkjdsfj", "dnf")
 
 
 # Optional tests

@@ -71,11 +71,12 @@ def _pyogrio_generator(obj, layer=0, chunk_size=65536):
 
     skip = 0
     while True:
-        _meta, _fids, geometries, field_data = pyogrio.raw.read(
+        _meta, fids, geometries, field_data = pyogrio.raw.read(
             obj,
             layer=layer,
             skip_features=skip,
             max_features=chunk_size,
+            return_fids=True,
             # Note do not use_arrow=True, reads all records into mem
             # https://pyogrio.readthedocs.io/en/latest/about.html#how-it-works
         )
@@ -85,8 +86,10 @@ def _pyogrio_generator(obj, layer=0, chunk_size=65536):
         for i in range(batch_size):
             props = {name: cols[j][i] for j, name in enumerate(field_names)}
             geom = geoms[i]
+            fid = int(fids[i])
             yield {
                 "type": "Feature",
+                "id": fid,
                 "geometry": geom.__geo_interface__ if geom is not None else None,
                 "properties": props,
             }
@@ -182,7 +185,8 @@ def _is_vector_file(path, layer):
     """
     try:
         info = pyogrio.read_info(path, layer=layer)
-    except Exception:
+    # important: don't catch DataLayerErrors, let those bubble up directly
+    except pyogrio.errors.DataSourceError:
         return False
     return info["features"] != 0
 

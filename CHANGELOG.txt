@@ -1,3 +1,8 @@
+0.21.0
+- [Breaking] Replaces fiona with pyogrio as the default vector io engine #314
+    - Should give better performance for most use cases.
+    - Pass `engine=fiona` to use the old code path
+
 0.20.0
 - Progress bar for interactive use (#300)
 - Fixes to support Fiona 1.10 (#301)
