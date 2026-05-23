@@ -8,6 +8,7 @@ import rasterio
 from shapely.geometry import shape
 
 from rasterstats.io import (  # todo parse_feature
+    DEFAULT_CHUNK_SIZE,
     Raster,
     _is_vector_file,
     boundless_array,
@@ -533,6 +534,35 @@ def test_geodataframe():
     if not hasattr(df, "__geo_interface__"):
         pytest.skip("This version of geopandas doesn't support df.__geo_interface__")
     assert list(read_features(df))
+
+
+def test_feature_generator_chunk_size(tmp_path):
+    """Reading with default engine, fiona engine, and alternative chunk sizes
+    all result in equivalent feature dicts."""
+    geojson = {
+        "type": "FeatureCollection",
+        "features": [
+            {
+                "type": "Feature",
+                "geometry": {"type": "Point", "coordinates": [float(i), 0.0]},
+                "properties": {"n": i},
+            }
+            for i in range(6)
+        ],
+    }
+    p = tmp_path / "chunked.geojson"
+    p.write_text(json.dumps(geojson))
+
+    default_results = list(feature_generator(polygons))
+    small_chunk_results = list(feature_generator(polygons, chunk_size=2))
+    fiona_results = list(feature_generator(polygons, engine="fiona", chunk_size=2))
+
+    assert default_results == small_chunk_results
+    # cannot compare them directly since they differ in tuples vs list representation for some reason
+    # let json roundtrip normalize it
+    assert json.loads(json.dumps(default_results)) == json.loads(
+        json.dumps(fiona_results)
+    )
 
 
 # TODO # io.parse_features on a feature-only geo_interface

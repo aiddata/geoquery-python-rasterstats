@@ -59,8 +59,10 @@ def _fiona_generator(obj, layer=0):
 
 # pyogrio backend
 
+DEFAULT_CHUNK_SIZE = 65536
 
-def _pyogrio_generator(obj, layer=0, chunk_size=65536):
+
+def _pyogrio_generator(obj, layer=0, chunk_size=DEFAULT_CHUNK_SIZE):
     """Yield GeoJSON-like Feature dicts using pyogrio, reading in chunks."""
     info = pyogrio.read_info(obj, layer=layer)
     field_names = list(info["fields"])
@@ -86,7 +88,7 @@ def _pyogrio_generator(obj, layer=0, chunk_size=65536):
         for i in range(batch_size):
             props = {name: cols[j][i] for j, name in enumerate(field_names)}
             geom = geoms[i]
-            fid = int(fids[i])
+            fid = str(fids[i])  # matches engine=fiona behavior
             yield {
                 "type": "Feature",
                 "id": fid,
@@ -103,7 +105,7 @@ def _pyogrio_generator(obj, layer=0, chunk_size=65536):
 DEFAULT_ENGINE = "pyogrio"
 
 
-def feature_generator(obj, layer=0, engine=None):
+def feature_generator(obj, layer=0, engine=None, chunk_size=DEFAULT_CHUNK_SIZE):
     """Yield GeoJSON-like Feature dicts from a file-based vector source.
 
     Parameters
@@ -116,6 +118,11 @@ def feature_generator(obj, layer=0, engine=None):
         Backend to use for reading. ``None`` selects the default engine
         (``"pyogrio"``). Pass ``"fiona"`` to opt in to the fiona backend
         (requires ``pip install rasterstats[fiona]``).
+    chunk_size : int, optional
+        Number of features to read per batch when using the pyogrio engine.
+        Reduce this value to lower peak memory usage for datasets with
+        large, vertex-dense geometries. Default: ``DEFAULT_CHUNK_SIZE``.
+        Has no effect when ``engine='fiona'``.
 
     Yields
     ------
@@ -124,7 +131,7 @@ def feature_generator(obj, layer=0, engine=None):
     """
     resolved = engine if engine is not None else DEFAULT_ENGINE
     if resolved == "pyogrio":
-        yield from _pyogrio_generator(obj, layer=layer)
+        yield from _pyogrio_generator(obj, layer=layer, chunk_size=chunk_size)
     elif resolved == "fiona":
         yield from _fiona_generator(obj, layer=layer)
     else:
@@ -191,12 +198,14 @@ def _is_vector_file(path, layer):
     return info["features"] != 0
 
 
-def read_features(obj, layer=0, engine=None):
+def read_features(obj, layer=0, engine=None, chunk_size=DEFAULT_CHUNK_SIZE):
     features_iter = None
     if isinstance(obj, (str, PathLike)):
         obj = str(obj)
         if _is_vector_file(obj, layer):
-            features_iter = feature_generator(obj, layer, engine=engine)
+            features_iter = feature_generator(
+                obj, layer, engine=engine, chunk_size=chunk_size
+            )
         else:
             try:
                 mapping = json.loads(obj)
