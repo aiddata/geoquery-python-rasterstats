@@ -1,8 +1,11 @@
 0.21.0
-- [Breaking] Replace fiona with pyogrio as the default vector io engine #314
-    - Should give better performance for most use cases. See benchmarks in PR.
-    - Pass `engine=fiona` to use the old code path
-    - Vector file detection is now done with pyogrio, driver discovery etc may differ accordingly.
+- Replace fiona with pyogrio as the default vector io engine #314
+    - Binary wheel support for python 3.14
+    - Promises better performance. See improvements in PR.
+    - Pass `engine=fiona` to use the old code path.
+    - Vector file detection now also uses pyogrio, so driver discovery etc may have changed for edge cases.
+- fix bug in progress bar #304
+- build, tooling, and test improvements #306 #308 #309 #310
 
 0.20.0
 - Progress bar for interactive use (#300)
