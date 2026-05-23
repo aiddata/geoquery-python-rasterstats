@@ -22,6 +22,10 @@ Quickstart
 
 Install::
 
+    uv add rasterstats
+
+Or with pip::
+
     pip install rasterstats
 
 

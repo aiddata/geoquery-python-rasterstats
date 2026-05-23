@@ -5,11 +5,12 @@ from collections.abc import Iterable, Mapping
 from json import JSONDecodeError
 from os import PathLike
 
-import fiona
 import numpy as np
+import pyogrio
+import pyogrio.raw
 import rasterio
+import shapely
 from affine import Affine
-from fiona.errors import DriverError
 from rasterio.enums import MaskFlags
 from rasterio.transform import guard_transform
 from shapely import wkb, wkt
@@ -29,20 +30,112 @@ geom_types = [
     "MultiPolygon",
 ]
 
-try:
-    # Fiona 1.9+
-    import fiona.model
+# Fiona backend
 
-    def fiona_generator(obj, layer=0):
+
+def _fiona_generator(obj, layer=0):
+    """Yield GeoJSON-like Feature dicts using fiona (optional engine).
+
+    Raises ImportError with a helpful message if fiona is not installed.
+    """
+    try:
+        import fiona
+    except ImportError:
+        raise ImportError(
+            "fiona is required for engine='fiona'. "
+            "Install it with: pip install rasterstats[fiona]"
+        )
+    try:
+        import fiona.model
+
         with fiona.open(obj, "r", layer=layer) as src:
             for feat in src:
                 yield fiona.model.to_dict(feat)
-
-except ModuleNotFoundError:
-    # Fiona <1.9
-    def fiona_generator(obj, layer=0):
+    except ImportError:
+        # fiona < 1.9 — no fiona.model
         with fiona.open(obj, "r", layer=layer) as src:
             yield from src
+
+
+# pyogrio backend
+
+DEFAULT_CHUNK_SIZE = 65536
+
+
+def _pyogrio_generator(obj, layer=0, chunk_size=DEFAULT_CHUNK_SIZE):
+    """Yield GeoJSON-like Feature dicts using pyogrio, reading in chunks."""
+    info = pyogrio.read_info(obj, layer=layer)
+    field_names = list(info["fields"])
+
+    # Some sources advertise `info["features"]" == -1` (WFS, certain VRT sources).
+    # ie they don't support *fast* feature counting, thus return -1
+    # But they *do* support iteration, which is all we need.
+
+    skip = 0
+    while True:
+        _meta, fids, geometries, field_data = pyogrio.raw.read(
+            obj,
+            layer=layer,
+            skip_features=skip,
+            max_features=chunk_size,
+            return_fids=True,
+            # Note do not use_arrow=True, reads all records into mem
+            # https://pyogrio.readthedocs.io/en/latest/about.html#how-it-works
+        )
+        batch_size = len(geometries)
+        geoms = shapely.from_wkb(geometries)
+        cols = [col.tolist() for col in field_data]
+        for i in range(batch_size):
+            props = {name: cols[j][i] for j, name in enumerate(field_names)}
+            geom = geoms[i]
+            fid = str(fids[i])  # matches engine=fiona behavior
+            yield {
+                "type": "Feature",
+                "id": fid,
+                "geometry": geom.__geo_interface__ if geom is not None else None,
+                "properties": props,
+            }
+        skip += batch_size
+        if batch_size < chunk_size:
+            break
+
+
+# Public dispatcher
+
+DEFAULT_ENGINE = "pyogrio"
+
+
+def feature_generator(obj, layer=0, engine=None, chunk_size=DEFAULT_CHUNK_SIZE):
+    """Yield GeoJSON-like Feature dicts from a file-based vector source.
+
+    Parameters
+    ----------
+    obj : str or PathLike
+        Path to a vector data source supported by pyogrio (default) or fiona.
+    layer : int or str, optional
+        Layer index or name (default: 0).
+    engine : {"pyogrio", "fiona"} or None, optional
+        Backend to use for reading. ``None`` selects the default engine
+        (``"pyogrio"``). Pass ``"fiona"`` to opt in to the fiona backend
+        (requires ``pip install rasterstats[fiona]``).
+    chunk_size : int, optional
+        Number of features to read per batch when using the pyogrio engine.
+        Reduce this value to lower peak memory usage for datasets with
+        large, vertex-dense geometries. Default: ``DEFAULT_CHUNK_SIZE``.
+        Has no effect when ``engine='fiona'``.
+
+    Yields
+    ------
+    dict
+        GeoJSON-like Feature dicts.
+    """
+    resolved = engine if engine is not None else DEFAULT_ENGINE
+    if resolved == "pyogrio":
+        yield from _pyogrio_generator(obj, layer=layer, chunk_size=chunk_size)
+    elif resolved == "fiona":
+        yield from _fiona_generator(obj, layer=layer)
+    else:
+        raise ValueError(f"Unknown engine {resolved!r}. Choose 'pyogrio' or 'fiona'.")
 
 
 def wrap_geom(geom):
@@ -89,24 +182,31 @@ def parse_feature(obj):
     raise ValueError(f"Can't parse {obj} as a geojson Feature object")
 
 
-def read_features(obj, layer=0):
+def _is_vector_file(path, layer):
+    """Return True if ``path`` is a readable vector file with at least one feature.
+
+    Uses pyogrio.read_info for the probe — no fiona required.
+    Returns False for invalid paths, non-vector files, and genuinely empty sources.
+    A feature count of -1 (unknown, e.g. some GeoJSON drivers) is treated as
+    non-empty (True).
+    """
+    try:
+        info = pyogrio.read_info(path, layer=layer)
+    # important: don't catch DataLayerErrors, let those bubble up directly
+    except pyogrio.errors.DataSourceError:
+        return False
+    return info["features"] != 0
+
+
+def read_features(obj, layer=0, engine=None, chunk_size=DEFAULT_CHUNK_SIZE):
     features_iter = None
     if isinstance(obj, (str, PathLike)):
         obj = str(obj)
-        try:
-            # test it as fiona data source
-            with fiona.open(obj, "r", layer=layer) as src:
-                assert len(src) > 0
-
-            features_iter = fiona_generator(obj, layer)
-        except (
-            AssertionError,
-            DriverError,
-            OSError,
-            TypeError,
-            UnicodeDecodeError,
-            ValueError,
-        ):
+        if _is_vector_file(obj, layer):
+            features_iter = feature_generator(
+                obj, layer, engine=engine, chunk_size=chunk_size
+            )
+        else:
             try:
                 mapping = json.loads(obj)
                 if "type" in mapping and mapping["type"] == "FeatureCollection":

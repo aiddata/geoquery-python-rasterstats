@@ -2,7 +2,7 @@ from numpy.ma import masked
 from shapely.geometry import shape
 from shapely.ops import transform
 
-from rasterstats.io import Raster, read_features
+from rasterstats.io import DEFAULT_CHUNK_SIZE, Raster, read_features
 
 
 def point_window_unitxy(x, y, affine):
@@ -109,6 +109,8 @@ def gen_point_query(
     property_name="value",
     geojson_out=False,
     boundless=True,
+    engine=None,
+    chunk_size=DEFAULT_CHUNK_SIZE,
 ):
     """
     Given a set of vector features and a raster,
@@ -161,6 +163,19 @@ def gen_point_query(
         Allow features that extend beyond the raster dataset's extent, default: True
         Cells outside dataset extents are treated as nodata.
 
+    engine : {"pyogrio", "fiona"} or None, optional
+        Backend to use when reading file-based vector sources.
+        ``None`` selects the default engine (``"pyogrio"``).
+        Pass ``"fiona"`` to opt in to the fiona backend
+        (requires ``pip install rasterstats[fiona]``).
+
+    chunk_size : int, optional
+        Number of features to read per batch when using the pyogrio engine.
+        Reduce this value to lower peak memory usage for datasets with
+        large, vertex-dense geometries. Default: ``DEFAULT_CHUNK_SIZE``.
+        Has no effect when ``engine='fiona'`` or when ``vectors`` is not a
+        file path.
+
     Returns
     -------
     generator of arrays (if ``geojson_out`` is False)
@@ -169,7 +184,7 @@ def gen_point_query(
     if interpolate not in ["nearest", "bilinear"]:
         raise ValueError("interpolate must be nearest or bilinear")
 
-    features_iter = read_features(vectors, layer)
+    features_iter = read_features(vectors, layer, engine=engine, chunk_size=chunk_size)
 
     with Raster(raster, nodata=nodata, affine=affine, band=band) as rast:
         for feat in features_iter:

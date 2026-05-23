@@ -558,6 +558,14 @@ def test_nan_counts():
         assert "nan" not in res
 
 
+def test_zonal_stats_chunk_size_stats():
+    """chunk_size= flows all the way through to _pyogrio_generator."""
+    polygons = data_dir / "polygons.shp"
+    default_stats = zonal_stats(polygons, raster)
+    chunked_stats = zonal_stats(polygons, raster, chunk_size=1)
+    assert default_stats == chunked_stats
+
+
 # Optional tests
 def test_geodataframe_zonal():
     gpd = pytest.importorskip("geopandas")

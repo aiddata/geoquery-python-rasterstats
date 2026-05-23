@@ -4,9 +4,10 @@ import warnings
 
 import numpy as np
 from affine import Affine
+from shapely import Geometry
 from shapely.geometry import shape
 
-from rasterstats.io import Raster, read_features
+from rasterstats.io import DEFAULT_CHUNK_SIZE, Raster, read_features
 from rasterstats.utils import (
     boxify_points,
     check_stats,
@@ -71,6 +72,8 @@ def gen_zonal_stats(
     prefix=None,
     geojson_out=False,
     boundless=True,
+    engine=None,
+    chunk_size=DEFAULT_CHUNK_SIZE,
     **kwargs,
 ):
     """Zonal statistics of raster values aggregated to vector geometries.
@@ -145,6 +148,19 @@ def gen_zonal_stats(
         Allow features that extend beyond the raster dataset's extent, default: True
         Cells outside dataset extents are treated as nodata.
 
+    engine : {"pyogrio", "fiona"} or None, optional
+        Backend to use when reading file-based vector sources.
+        ``None`` selects the default engine (``"pyogrio"``).
+        Pass ``"fiona"`` to opt in to the fiona backend
+        (requires ``pip install rasterstats[fiona]``).
+
+    chunk_size : int, optional
+        Number of features to read per batch when using the pyogrio engine.
+        Reduce this value to lower peak memory usage for datasets with
+        large, vertex-dense geometries. Default: ``DEFAULT_CHUNK_SIZE``.
+        Has no effect when ``engine='fiona'`` or when ``vectors`` is not a
+        file path.
+
     Returns
     -------
     generator of dicts (if geojson_out is False)
@@ -179,9 +195,11 @@ def gen_zonal_stats(
         band = band_num
 
     with Raster(raster, affine, nodata, band) as rast:
-        features_iter = read_features(vectors, layer)
+        features_iter = read_features(vectors, layer, engine=engine, chunk_size=chunk_size)
         for _, feat in enumerate(features_iter):
-            geom = shape(feat["geometry"])
+            geom = feat["geometry"]
+            if not isinstance(geom, Geometry):
+                geom = shape(geom)
 
             if "Point" in geom.geom_type:
                 geom = boxify_points(geom, rast)

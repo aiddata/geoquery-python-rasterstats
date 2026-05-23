@@ -1,17 +1,19 @@
 import json
 from pathlib import Path
 
-import fiona
 import numpy as np
+import pyogrio
 import pytest
 import rasterio
 from shapely.geometry import shape
 
 from rasterstats.io import (  # todo parse_feature
+    DEFAULT_CHUNK_SIZE,
     Raster,
+    _is_vector_file,
     boundless_array,
     bounds_window,
-    fiona_generator,
+    feature_generator,
     read_featurecollection,
     read_features,
     rowcol,
@@ -28,7 +30,7 @@ arr3d = np.array([[[1, 1, 1], [1, 1, 1], [1, 1, 1]]])
 
 eps = 1e-6
 
-target_features = [f for f in fiona_generator(polygons)]
+target_features = list(feature_generator(polygons))
 
 target_geoms = [shape(f["geometry"]) for f in target_features]
 
@@ -52,16 +54,24 @@ def _test_read_features_single(indata):
 
 
 def test_fiona_path():
-    assert list(read_features(polygons)) == target_features
+    """read_features on a path uses pyogrio default; geometries match."""
+    features = list(read_features(polygons))
+    geoms = [shape(f["geometry"]) for f in features]
+    _compare_geomlists(geoms, target_geoms)
 
 
 def test_layer_index():
+    fiona = pytest.importorskip("fiona")
     layer = fiona.listlayers(data_dir).index("polygons")
-    assert list(read_features(data_dir, layer=layer)) == target_features
+    result = list(read_features(data_dir, layer=layer))
+    geoms = [shape(f["geometry"]) for f in result]
+    _compare_geomlists(geoms, target_geoms)
 
 
 def test_layer_name():
-    assert list(read_features(data_dir, layer="polygons")) == target_features
+    result = list(read_features(data_dir, layer="polygons"))
+    geoms = [shape(f["geometry"]) for f in result]
+    _compare_geomlists(geoms, target_geoms)
 
 
 def test_path_unicode():
@@ -70,75 +80,78 @@ def test_path_unicode():
     except NameError:
         # python3, it's already unicode
         upolygons = polygons
-    assert list(read_features(upolygons)) == target_features
+    result = list(read_features(upolygons))
+    geoms = [shape(f["geometry"]) for f in result]
+    _compare_geomlists(geoms, target_geoms)
 
 
 def test_featurecollection():
-    assert (
-        read_featurecollection(polygons)["features"]
-        == list(read_features(polygons))
-        == target_features
-    )
+    fc_features = read_featurecollection(polygons)["features"]
+    rf_features = list(read_features(polygons))
+    geoms_fc = [shape(f["geometry"]) for f in fc_features]
+    geoms_rf = [shape(f["geometry"]) for f in rf_features]
+    _compare_geomlists(geoms_fc, target_geoms)
+    _compare_geomlists(geoms_rf, target_geoms)
 
 
 def test_shapely():
-    indata = [shape(f["geometry"]) for f in fiona_generator(polygons)]
+    indata = [shape(f["geometry"]) for f in feature_generator(polygons)]
     _test_read_features(indata)
     _test_read_features_single(indata[0])
 
 
 def test_wkt():
-    indata = [shape(f["geometry"]).wkt for f in fiona_generator(polygons)]
+    indata = [shape(f["geometry"]).wkt for f in feature_generator(polygons)]
     _test_read_features(indata)
     _test_read_features_single(indata[0])
 
 
 def test_wkb():
-    indata = [shape(f["geometry"]).wkb for f in fiona_generator(polygons)]
+    indata = [shape(f["geometry"]).wkb for f in feature_generator(polygons)]
     _test_read_features(indata)
     _test_read_features_single(indata[0])
 
 
 def test_mapping_features():
     # list of Features
-    indata = [f for f in fiona_generator(polygons)]
+    indata = list(feature_generator(polygons))
     _test_read_features(indata)
 
 
 def test_mapping_feature():
     # list of Features
-    indata = [f for f in fiona_generator(polygons)]
+    indata = list(feature_generator(polygons))
     _test_read_features(indata[0])
 
 
 def test_mapping_geoms():
-    indata = [f for f in fiona_generator(polygons)]
+    indata = list(feature_generator(polygons))
     _test_read_features(indata[0]["geometry"])
 
 
 def test_mapping_collection():
     indata = {"type": "FeatureCollection"}
-    indata["features"] = [f for f in fiona_generator(polygons)]
+    indata["features"] = list(feature_generator(polygons))
     _test_read_features(indata)
 
 
 def test_jsonstr():
     # Feature str
-    indata = [f for f in fiona_generator(polygons)]
+    indata = list(feature_generator(polygons))
     indata = json.dumps(indata[0])
     _test_read_features(indata)
 
 
 def test_jsonstr_geom():
     # geojson geom str
-    indata = [f for f in fiona_generator(polygons)]
+    indata = list(feature_generator(polygons))
     indata = json.dumps(indata[0]["geometry"])
     _test_read_features(indata)
 
 
 def test_jsonstr_collection():
     indata = {"type": "FeatureCollection"}
-    indata["features"] = [f for f in fiona_generator(polygons)]
+    indata["features"] = list(feature_generator(polygons))
     indata = json.dumps(indata)
     _test_read_features(indata)
 
@@ -163,19 +176,19 @@ class MockGeoInterface:
 
 
 def test_geo_interface():
-    indata = [MockGeoInterface(f) for f in fiona_generator(polygons)]
+    indata = [MockGeoInterface(f) for f in feature_generator(polygons)]
     _test_read_features(indata)
 
 
 def test_geo_interface_geom():
-    indata = [MockGeoInterface(f["geometry"]) for f in fiona_generator(polygons)]
+    indata = [MockGeoInterface(f["geometry"]) for f in feature_generator(polygons)]
     _test_read_features(indata)
 
 
 def test_geo_interface_collection():
     # geointerface for featurecollection?
     indata = {"type": "FeatureCollection"}
-    indata["features"] = [f for f in fiona_generator(polygons)]
+    indata["features"] = list(feature_generator(polygons))
     indata = MockGeoInterface(indata)
     _test_read_features(indata)
 
@@ -370,7 +383,150 @@ def test_geointerface():
     assert list(read_features(geothing)) == features
 
 
+# feature_generator / engine tests
+
+
+def test_feature_generator_pyogrio_default():
+    """feature_generator with no engine= uses pyogrio (new default)."""
+    result = list(feature_generator(polygons))
+    geoms = [shape(f["geometry"]) for f in result]
+    _compare_geomlists(geoms, target_geoms)
+
+
+def test_feature_generator_explicit_fiona():
+    """feature_generator with engine='fiona' yields correct geometries."""
+    pytest.importorskip("fiona")
+    result = list(feature_generator(polygons, engine="fiona"))
+    geoms = [shape(f["geometry"]) for f in result]
+    _compare_geomlists(geoms, target_geoms)
+
+
+def test_feature_generator_pyogrio():
+    """feature_generator with engine='pyogrio' yields same geometries."""
+    pytest.importorskip("pyogrio")
+    result = list(feature_generator(polygons, engine="pyogrio"))
+    geoms = [shape(f["geometry"]) for f in result]
+    _compare_geomlists(geoms, target_geoms)
+
+
+def test_feature_generator_pyogrio_properties():
+    """pyogrio engine preserves feature properties."""
+    pytest.importorskip("pyogrio")
+    result = list(feature_generator(polygons, engine="pyogrio"))
+    assert all("properties" in f for f in result)
+    assert all("id" in f["properties"] for f in result)
+
+
+def test_feature_generator_invalid_engine():
+    """An unrecognised engine name raises ValueError."""
+    with pytest.raises(ValueError, match="Unknown engine"):
+        list(feature_generator(polygons, engine="gdal"))
+
+
+def test_read_features_pyogrio_engine():
+    """read_features forwards engine= to the underlying generator."""
+    pytest.importorskip("pyogrio")
+    result = list(read_features(polygons, engine="pyogrio"))
+    geoms = [shape(f["geometry"]) for f in result]
+    _compare_geomlists(geoms, target_geoms)
+
+
+def test_pyogrio_null_geometry(tmp_path):
+    """_pyogrio_generator yields None geometry for features with null geometry
+    rather than raising AttributeError."""
+    geojson = {
+        "type": "FeatureCollection",
+        "features": [
+            {
+                "type": "Feature",
+                "geometry": {"type": "Point", "coordinates": [0, 0]},
+                "properties": {"n": 1},
+            },
+            {"type": "Feature", "geometry": None, "properties": {"n": 2}},
+            {
+                "type": "Feature",
+                "geometry": {"type": "Point", "coordinates": [1, 1]},
+                "properties": {"n": 3},
+            },
+        ],
+    }
+    p = tmp_path / "null_geom.geojson"
+    p.write_text(json.dumps(geojson))
+
+    results = list(feature_generator(str(p), engine="pyogrio"))
+    assert len(results) == 3
+    assert results[0]["geometry"] is not None
+    assert results[1]["geometry"] is None
+    assert results[2]["geometry"] is not None
+    assert results[1]["properties"]["n"] == 2
+
+
+def test_pyogrio_unknown_feature_count(tmp_path, monkeypatch):
+    """_pyogrio_generator reads all features when read_info returns features=-1.
+
+    Some GDAL drivers (e.g. WFS) cannot report feature count ahead of time and
+    return -1.  The old ``while skip < total`` loop silently yielded nothing in
+    this case.  The new unconditional loop must still yield all features.
+    """
+    import pyogrio
+
+    geojson = {
+        "type": "FeatureCollection",
+        "features": [
+            {
+                "type": "Feature",
+                "geometry": {"type": "Point", "coordinates": [float(i), 0.0]},
+                "properties": {"n": i},
+            }
+            for i in range(5)
+        ],
+    }
+    p = tmp_path / "unknown_count.geojson"
+    p.write_text(json.dumps(geojson))
+
+    real_read_info = pyogrio.read_info
+
+    def fake_read_info(path, **kwargs):
+        info = real_read_info(path, **kwargs)
+        info["features"] = -1
+        return info
+
+    monkeypatch.setattr(pyogrio, "read_info", fake_read_info)
+    # Also patch the name used inside the io module
+    import rasterstats.io as io_mod
+
+    monkeypatch.setattr(io_mod, "pyogrio", pyogrio)
+
+    results = list(feature_generator(str(p), engine="pyogrio"))
+    assert len(results) == 5
+    assert [f["properties"]["n"] for f in results] == list(range(5))
+
+
+# Test detection of vector files
+# Private function but deserves unit tests
+
+
+def test_is_vector_file():
+    assert _is_vector_file(polygons, "polygons")
+
+
+def test_wrong_vector_layer():
+    "Data source is fine. DataLayerErrors pass through to fail fast."
+    with pytest.raises(pyogrio.errors.DataLayerError):
+        _is_vector_file(polygons, "something-else")
+
+
+def test_isnt_vector_file():
+    assert not _is_vector_file(raster, "raster")
+
+
+def test_is_absent_file():
+    assert not _is_vector_file("/tmp/sdfjaohgoadfknkjdsfj", "dnf")
+
+
 # Optional tests
+
+
 def test_geodataframe():
     gpd = pytest.importorskip("geopandas")
 
@@ -378,6 +534,35 @@ def test_geodataframe():
     if not hasattr(df, "__geo_interface__"):
         pytest.skip("This version of geopandas doesn't support df.__geo_interface__")
     assert list(read_features(df))
+
+
+def test_feature_generator_chunk_size(tmp_path):
+    """Reading with default engine, fiona engine, and alternative chunk sizes
+    all result in equivalent feature dicts."""
+    geojson = {
+        "type": "FeatureCollection",
+        "features": [
+            {
+                "type": "Feature",
+                "geometry": {"type": "Point", "coordinates": [float(i), 0.0]},
+                "properties": {"n": i},
+            }
+            for i in range(6)
+        ],
+    }
+    p = tmp_path / "chunked.geojson"
+    p.write_text(json.dumps(geojson))
+
+    default_results = list(feature_generator(polygons))
+    small_chunk_results = list(feature_generator(polygons, chunk_size=2))
+    fiona_results = list(feature_generator(polygons, engine="fiona", chunk_size=2))
+
+    assert default_results == small_chunk_results
+    # cannot compare them directly since they differ in tuples vs list representation for some reason
+    # let json roundtrip normalize it
+    assert json.loads(json.dumps(default_results)) == json.loads(
+        json.dumps(fiona_results)
+    )
 
 
 # TODO # io.parse_features on a feature-only geo_interface

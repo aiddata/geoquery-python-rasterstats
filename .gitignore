@@ -17,6 +17,8 @@ Vagrantfile
 venv
 .eggs
 .cache
+.python-version
+*.lprof
 
 # no uv lockfile until this is fixed:
 # https://github.com/astral-sh/uv/issues/10845
