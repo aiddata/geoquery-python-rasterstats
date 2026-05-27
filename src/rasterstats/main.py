@@ -217,10 +217,8 @@ def gen_zonal_stats(
         warnings.warn("Use `band` to specify band number", DeprecationWarning)
         band = band_num
 
-
     # -------------------------------------------------------------------------
     # make sure feature split/aggregations will work with options provided
-
 
     limit = None if not limit else limit
 
@@ -311,7 +309,6 @@ def gen_zonal_stats(
                 geom = boxify_points(geom, rast)
                 percent_cover = percent_cover_weighting = False
 
-
             # -----------------------------------------------------------------
             # build geom_list (split geoms if needed)
 
@@ -323,8 +320,6 @@ def gen_zonal_stats(
                 origin = (rast.affine[2], rast.affine[5])
                 geom_list = split_geom(geom, limit, pixel_size, origin=origin)
 
-
-
             # -----------------------------------------------------------------
             # run sub geom extracts
 
@@ -333,7 +328,6 @@ def gen_zonal_stats(
                 sub_geom_bounds = tuple(sub_geom_box.bounds)
 
                 fsrc = rast.read(bounds=sub_geom_bounds)
-
 
                 # rasterized geometry
                 if percent_cover:
@@ -346,7 +340,6 @@ def gen_zonal_stats(
                     rv_array = rasterize_geom(
                         geom, shape=fsrc.shape, affine=fsrc.affine,
                         all_touched=all_touched)
-
 
                 # nodata mask
                 isnodata = fsrc.array == fsrc.nodata
@@ -390,9 +383,9 @@ def gen_zonal_stats(
 
                 if masked.compressed().size == 0:
                     # nothing here, fill with None and move on
-                    feature_stats = {stat: None for stat in stats}
+                    sub_feature_stats = {stat: None for stat in stats}
                     if "count" in stats:  # special case, zero makes sense here
-                        feature_stats["count"] = 0
+                        sub_feature_stats["count"] = 0
                 else:
                     if run_count:
                         keys, counts = np.unique(masked.compressed(), return_counts=True)
@@ -493,13 +486,13 @@ def gen_zonal_stats(
                     for stat_name, stat_func in add_stats.items():
                         n_params = len(inspect.signature(stat_func).parameters.keys())
                         if n_params == 3:
-                            feature_stats[stat_name] = stat_func(masked, feat["properties"], rv_array)
+                            sub_feature_stats[stat_name] = stat_func(masked, feat["properties"], rv_array)
                         # backwards compatible with two-argument function
                         elif n_params == 2:
-                            feature_stats[stat_name] = stat_func(masked, feat["properties"])
+                            sub_feature_stats[stat_name] = stat_func(masked, feat["properties"])
                         # backwards compatible with single-argument function
                         else:
-                            feature_stats[stat_name] = stat_func(masked)
+                            sub_feature_stats[stat_name] = stat_func(masked)
 
                 if raster_out:
                     sub_feature_stats['mini_raster_array'] = masked
@@ -513,7 +506,6 @@ def gen_zonal_stats(
                 if ix == 0:
                     feature_stats = copy(sub_feature_stats)
                 else:
-
                     tmp_feature_stats = copy(feature_stats)
                     feature_stats = {}
                     sub_feature_stats_list = [tmp_feature_stats, sub_feature_stats]
