@@ -429,7 +429,6 @@ def gen_zonal_stats(
                             sub_feature_stats['latitude_correction'] = tmp_denominator / np.sum(~masked.mask * cover_weights)
 
                         elif percent_cover_weighting:
-                            breakpoint()
                             tmp_numerator = np.sum(masked * cover_weights)
                             tmp_denominator = np.sum(~masked.mask * cover_weights)
                             sub_feature_stats['mean'] = float(tmp_numerator / tmp_denominator)
