@@ -416,22 +416,22 @@ def gen_zonal_stats(
 
                     if 'sum' in stats:
                         if percent_cover_weighting:
-                            sub_feature_stats['sum'] = float(np.sum(masked * cover_weights, dtype=accum_dtype))
+                            sub_feature_stats['sum'] = float(np.sum(masked * cover_weights))
                         else:
-                            sub_feature_stats['sum'] = float(masked.sum(dtype=accum_dtype))
+                            sub_feature_stats['sum'] = float(masked.sum())
 
                     if 'mean' in stats:
                         if percent_cover_weighting and latitude_correction:
 
-                            tmp_numerator = np.sum((masked.T * latitude_scale).T * cover_weights, dtype=accum_dtype)
-                            tmp_denominator = np.sum((~masked.mask.T * latitude_scale).T * cover_weights, dtype=accum_dtype)
+                            tmp_numerator = np.sum((masked.T * latitude_scale).T * cover_weights)
+                            tmp_denominator = np.sum((~masked.mask.T * latitude_scale).T * cover_weights)
                             sub_feature_stats['mean'] = float(tmp_numerator / tmp_denominator)
-                            sub_feature_stats['latitude_correction'] = tmp_denominator / np.sum(~masked.mask * cover_weights, dtype=accum_dtype)
+                            sub_feature_stats['latitude_correction'] = tmp_denominator / np.sum(~masked.mask * cover_weights)
 
                         elif percent_cover_weighting:
-
-                            tmp_numerator = np.sum(masked * cover_weights, dtype=accum_dtype)
-                            tmp_denominator = np.sum(~masked.mask * cover_weights, dtype=accum_dtype)
+                            breakpoint()
+                            tmp_numerator = np.sum(masked * cover_weights)
+                            tmp_denominator = np.sum(~masked.mask * cover_weights)
                             sub_feature_stats['mean'] = float(tmp_numerator / tmp_denominator)
 
                         elif latitude_correction:
