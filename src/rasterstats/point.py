@@ -2,7 +2,7 @@ from numpy.ma import masked
 from shapely.geometry import shape
 from shapely.ops import transform
 
-from rasterstats.io import Raster, read_features
+from rasterstats.io import DEFAULT_CHUNK_SIZE, Raster, read_features
 
 
 def point_window_unitxy(x, y, affine):
@@ -15,7 +15,7 @@ def point_window_unitxy(x, y, affine):
     ((row1, row2), (col1, col2)), (unitx, unity)
     """
     fcol, frow = ~affine * (x, y)
-    r, c = int(round(frow)), int(round(fcol))
+    r, c = round(frow), round(fcol)
 
     # The new source window for our 2x2 array
     new_win = ((r - 1, r + 1), (c - 1, c + 1))
@@ -50,7 +50,7 @@ def bilinear(arr, x, y):
     if hasattr(arr, "count") and arr.count() != 4:
         # a masked array with at least one nodata
         # fall back to nearest neighbor
-        val = arr[int(round(1 - y)), int(round(x))]
+        val = arr[round(1 - y), round(x)]
         if val is masked:
             return None
         else:
@@ -109,6 +109,8 @@ def gen_point_query(
     property_name="value",
     geojson_out=False,
     boundless=True,
+    engine=None,
+    chunk_size=DEFAULT_CHUNK_SIZE,
 ):
     """
     Given a set of vector features and a raster,
@@ -158,8 +160,21 @@ def gen_point_query(
         point query values appended as additional properties.
 
     boundless: boolean
-        Allow features that extend beyond the raster dataset’s extent, default: True
+        Allow features that extend beyond the raster dataset's extent, default: True
         Cells outside dataset extents are treated as nodata.
+
+    engine : {"pyogrio", "fiona"} or None, optional
+        Backend to use when reading file-based vector sources.
+        ``None`` selects the default engine (``"pyogrio"``).
+        Pass ``"fiona"`` to opt in to the fiona backend
+        (requires ``pip install rasterstats[fiona]``).
+
+    chunk_size : int, optional
+        Number of features to read per batch when using the pyogrio engine.
+        Reduce this value to lower peak memory usage for datasets with
+        large, vertex-dense geometries. Default: ``DEFAULT_CHUNK_SIZE``.
+        Has no effect when ``engine='fiona'`` or when ``vectors`` is not a
+        file path.
 
     Returns
     -------
@@ -169,7 +184,7 @@ def gen_point_query(
     if interpolate not in ["nearest", "bilinear"]:
         raise ValueError("interpolate must be nearest or bilinear")
 
-    features_iter = read_features(vectors, layer)
+    features_iter = read_features(vectors, layer, engine=engine, chunk_size=chunk_size)
 
     with Raster(raster, nodata=nodata, affine=affine, band=band) as rast:
         for feat in features_iter:

@@ -5,9 +5,10 @@ from copy import copy
 
 import numpy as np
 from affine import Affine
+from shapely import Geometry
 from shapely.geometry import shape
 
-from rasterstats.io import Raster, read_features
+from rasterstats.io import DEFAULT_CHUNK_SIZE, Raster, read_features
 from rasterstats.utils import (
     boxify_points,
     check_stats,
@@ -21,11 +22,16 @@ from rasterstats.utils import (
     VALID_STATS
 )
 
+try:
+    from tqdm import tqdm
+except ImportError:
+    tqdm = None
+
 
 def raster_stats(*args, **kwargs):
     """Deprecated. Use zonal_stats instead."""
     warnings.warn(
-        "'raster_stats' is an alias to 'zonal_stats'" " and will disappear in 1.0",
+        "'raster_stats' is an alias to 'zonal_stats' and will disappear in 1.0",
         DeprecationWarning,
     )
     return zonal_stats(*args, **kwargs)
@@ -39,7 +45,19 @@ def zonal_stats(*args, **kwargs):
 
     The only difference is that ``zonal_stats`` will
     return a list rather than a generator."""
-    return list(gen_zonal_stats(*args, **kwargs))
+    progress = kwargs.get("progress")
+    if progress:
+        if tqdm is None:
+            raise ValueError(
+                "You specified progress=True, but tqdm is not installed in "
+                "the environment. "
+                "You can do pip install rasterstats[progress] to install tqdm!"
+            )
+        stats = gen_zonal_stats(*args, **kwargs)
+        total = len(args[0])
+        return [stat for stat in tqdm(stats, total=total)]
+    else:
+        return list(gen_zonal_stats(*args, **kwargs))
 
 
 def gen_zonal_stats(
@@ -64,15 +82,19 @@ def gen_zonal_stats(
     percent_cover_weighting=False,
     percent_cover_scale=None,
     limit=None,
+    engine=None,
+    chunk_size=DEFAULT_CHUNK_SIZE,
     **kwargs,
 ):
     """Zonal statistics of raster values aggregated to vector geometries.
 
     Parameters
     ----------
-    vectors: path to an vector source or geo-like python objects
+    vectors : str or PathLike
+        Path to an vector source or geo-like python objects.
 
-    raster: ndarray or path to a GDAL raster source
+    raster: array_like, str or PathLike
+        NumPy array or path to a GDAL raster source.
         If ndarray is passed, the ``affine`` kwarg is required.
 
     layer: int or string, optional
@@ -181,8 +203,21 @@ def gen_zonal_stats(
         Use with `prefix` to ensure unique and meaningful property names.
 
     boundless: boolean
-        Allow features that extend beyond the raster dataset’s extent, default: True
+        Allow features that extend beyond the raster dataset's extent, default: True
         Cells outside dataset extents are treated as nodata.
+
+    engine : {"pyogrio", "fiona"} or None, optional
+        Backend to use when reading file-based vector sources.
+        ``None`` selects the default engine (``"pyogrio"``).
+        Pass ``"fiona"`` to opt in to the fiona backend
+        (requires ``pip install rasterstats[fiona]``).
+
+    chunk_size : int, optional
+        Number of features to read per batch when using the pyogrio engine.
+        Reduce this value to lower peak memory usage for datasets with
+        large, vertex-dense geometries. Default: ``DEFAULT_CHUNK_SIZE``.
+        Has no effect when ``engine='fiona'`` or when ``vectors`` is not a
+        file path.
 
     Returns
     -------
@@ -301,9 +336,11 @@ def gen_zonal_stats(
 
 
     with Raster(raster, affine, nodata, band) as rast:
-        features_iter = read_features(vectors, layer)
+        features_iter = read_features(vectors, layer, engine=engine, chunk_size=chunk_size)
         for _, feat in enumerate(features_iter):
-            geom = shape(feat["geometry"])
+            geom = feat["geometry"]
+            if not isinstance(geom, Geometry):
+                geom = shape(geom)
 
             if "Point" in geom.geom_type:
                 geom = boxify_points(geom, rast)
@@ -468,7 +505,7 @@ def gen_zonal_stats(
                     for pctile in [s for s in stats if s.startswith('percentile_')]:
                         q = get_percentile(pctile)
                         pctarr = masked.compressed()
-                        sub_feature_stats[pctile] = np.percentile(pctarr, q)
+                        sub_feature_stats[pctile] = float(np.percentile(pctarr, q))
 
                 if 'nodata' in stats or 'nan' in stats:
                     featmasked = np.ma.MaskedArray(fsrc.array, mask=(~rv_array))

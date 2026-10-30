@@ -41,13 +41,18 @@ while ``point_query`` gives us a list of raster values corresponding to each inp
 Vector Data Sources
 -------------------
 The most common use case is having vector data sources in a file such as an ESRI Shapefile or any
-other format supported by ``fiona``. The path to the file can be passed in directly as the first argument::
+other format supported by ``pyogrio``. The path to the file can be passed in directly as the first argument::
     
     >>> zs = zonal_stats('tests/data/polygons.shp', 'tests/data/slope.tif')
 
 If you have multi-layer sources, you can specify the ``layer`` by either name or index::
 
     >>> zs = zonal_stats('tests/data', 'tests/data/slope.tif', layer="polygons")
+
+If you have ``fiona`` installed and want to use it as the vector iteration engine
+instead of the default ``pyogrio``, you can optionally add ``engine='fiona'``
+
+    >>> zs = zonal_stats("tests/data/polygons.shp", "tests/data/slope.tif", engine="fiona")
 
 In addition to the basic usage above, rasterstats supports other
 mechanisms of specifying vector geometries. 
@@ -294,5 +299,3 @@ command line tool, as well as GRASS's `r.statistics <https://grass.osgeo.org/gra
 They were suitable for offline analyses but were rather clunky to deploy in a large python application.
 In 2013, I implemented a proof-of-concept zonal stats function which eventually became ``rasterstats``. It has
 been in production in several large python web applications ever since, replacing the starspan wrapper `madrona.raster_stats <https://github.com/Ecotrust/madrona/blob/master/docs/raster_stats.rst>`_.
-
-
