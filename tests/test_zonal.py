@@ -7,7 +7,7 @@ import pytest
 import rasterio
 import simplejson
 from affine import Affine
-from shapely.geometry import Polygon
+from shapely.geometry import Point, Polygon
 
 from rasterstats import raster_stats, zonal_stats
 from rasterstats.io import read_featurecollection, read_features
@@ -675,6 +675,19 @@ def test_percent_cover_zonal_stats():
     # check invalid percent_cover_selection value
     with pytest.raises(Exception):
         zonal_stats(polygon, arr, affine=affine, percent_cover_selection='one', percent_cover_scale=10)
+
+
+def test_percent_cover_after_point_feature():
+    polygon = Polygon([[0, 0], [0, 1.5], [1, 1.5], [1, 2], [2, 2], [2, 0]])
+    point = Point(0.5, 0.5)
+    arr = np.array([[100, 1], [100, 1]])
+    affine = Affine(1, 0, 0, 0, -1, 2)
+    kwargs = dict(affine=affine, percent_cover_weighting=True,
+                  percent_cover_scale=10, all_touched=True, stats="count mean")
+    expected = zonal_stats(polygon, arr, **kwargs)[0]
+    # a point disables percent cover for itself only, not for later features
+    stats = zonal_stats([polygon, point, polygon], arr, **kwargs)
+    assert stats[0] == stats[2] == expected
 
 
 def test_latitude_correction():

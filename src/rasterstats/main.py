@@ -342,9 +342,12 @@ def gen_zonal_stats(
             if not isinstance(geom, Geometry):
                 geom = shape(geom)
 
+            # points have no area to cover, so skip percent cover for this feature only
+            feat_percent_cover = percent_cover
+            feat_cover_weighting = percent_cover_weighting
             if "Point" in geom.geom_type:
                 geom = boxify_points(geom, rast)
-                percent_cover = percent_cover_weighting = False
+                feat_percent_cover = feat_cover_weighting = False
 
             # -----------------------------------------------------------------
             # build geom_list (split geoms if needed)
@@ -367,7 +370,7 @@ def gen_zonal_stats(
                 fsrc = rast.read(bounds=sub_geom_bounds)
 
                 # rasterized geometry
-                if percent_cover:
+                if feat_percent_cover:
                     cover_weights = rasterize_pctcover_geom(
                         geom, shape=fsrc.shape, affine=fsrc.affine,
                         scale=percent_cover_scale,
@@ -446,26 +449,26 @@ def gen_zonal_stats(
                         sub_feature_stats = {}
 
                     if 'count' in stats:
-                        if percent_cover_weighting:
+                        if feat_cover_weighting:
                             sub_feature_stats['count'] = float(np.sum(~masked.mask * cover_weights))
                         else:
                             sub_feature_stats['count'] = int(masked.count())
 
                     if 'sum' in stats:
-                        if percent_cover_weighting:
+                        if feat_cover_weighting:
                             sub_feature_stats['sum'] = float(np.sum(masked * cover_weights))
                         else:
                             sub_feature_stats['sum'] = float(masked.sum())
 
                     if 'mean' in stats:
-                        if percent_cover_weighting and latitude_correction:
+                        if feat_cover_weighting and latitude_correction:
 
                             tmp_numerator = np.sum((masked.T * latitude_scale).T * cover_weights)
                             tmp_denominator = np.sum((~masked.mask.T * latitude_scale).T * cover_weights)
                             sub_feature_stats['mean'] = float(tmp_numerator / tmp_denominator)
                             sub_feature_stats['latitude_correction'] = tmp_denominator / np.sum(~masked.mask * cover_weights)
 
-                        elif percent_cover_weighting:
+                        elif feat_cover_weighting:
                             tmp_numerator = np.sum(masked * cover_weights)
                             tmp_denominator = np.sum(~masked.mask * cover_weights)
                             sub_feature_stats['mean'] = float(tmp_numerator / tmp_denominator)
