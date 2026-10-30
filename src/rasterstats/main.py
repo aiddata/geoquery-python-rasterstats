@@ -564,17 +564,16 @@ def gen_zonal_stats(
                         else:
                             feature_stats['mean'] = sum([i['mean'] * i['count'] for i in sub_feature_stats_list if i['count']]) / sum([i['count'] for i in sub_feature_stats_list if i['count']])
 
-                    if 'min' in stats:
-                        vals = [i['min'] for i in sub_feature_stats_list if i['min'] is not None]
+                    # range needs min/max carried through each aggregation step
+                    if 'min' in stats or 'range' in stats:
+                        vals = [i.get('min') for i in sub_feature_stats_list if i.get('min') is not None]
                         feature_stats['min'] = min(vals) if vals else None
-                    if 'max' in stats:
-                        vals = [i['max'] for i in sub_feature_stats_list if i['max'] is not None]
+                    if 'max' in stats or 'range' in stats:
+                        vals = [i.get('max') for i in sub_feature_stats_list if i.get('max') is not None]
                         feature_stats['max'] = max(vals) if vals else None
                     if 'range' in stats:
-                        min_vals = [i['min'] for i in sub_feature_stats_list if i['min'] is not None]
-                        max_vals = [i['max'] for i in sub_feature_stats_list if i['max'] is not None]
-                        rmin = min(vals) if vals else None
-                        rmax = max(vals) if vals else None
+                        rmin = feature_stats['min']
+                        rmax = feature_stats['max']
                         feature_stats['range'] = rmax - rmin if rmin is not None else None
 
                     if 'nodata' in stats:
@@ -592,11 +591,10 @@ def gen_zonal_stats(
                                         feature_stats[field] += sub_stats[field]
 
 
-            if ix == 0:
-                if 'range' in stats and not 'min' in stats and 'min' in feature_stats:
-                    del feature_stats['min']
-                if 'range' in stats and not 'max' in stats and 'max' in feature_stats:
-                    del feature_stats['max']
+            if 'range' in stats and not 'min' in stats and 'min' in feature_stats:
+                del feature_stats['min']
+            if 'range' in stats and not 'max' in stats and 'max' in feature_stats:
+                del feature_stats['max']
 
             if latitude_correction and 'mean' in stats and 'latitude_correction' in feature_stats:
                 del feature_stats['latitude_correction']

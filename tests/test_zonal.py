@@ -726,6 +726,19 @@ def test_geom_split_main():
     stats3 = zonal_stats(polygons, raster, limit=50, stats=all_valid_limit_stats)
 
 
+def test_geom_split_range():
+    polygons = data_dir / "polygons.shp"
+    stats1 = zonal_stats(polygons, raster, stats="range")
+    # range alone, and range alongside other stats, must aggregate across splits
+    for stats_opt in ["range", "range sum", "range min max"]:
+        stats2 = zonal_stats(polygons, raster, limit=10, stats=stats_opt)
+        for s1, s2 in zip(stats1, stats2):
+            assert s2["range"] == s1["range"]
+    # min/max only used internally for range, so not output
+    stats3 = zonal_stats(polygons, raster, limit=10, stats="range")
+    assert "min" not in stats3[0] and "max" not in stats3[0]
+
+
 def test_geom_split_categorical():
     polygons = data_dir / "polygons.shp"
     categorical_raster = data_dir / "slope_classes.tif"
