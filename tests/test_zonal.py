@@ -739,6 +739,17 @@ def test_geom_split_range():
     assert "min" not in stats3[0] and "max" not in stats3[0]
 
 
+def test_geom_split_zero_sum():
+    polygon = Polygon([[0, 0], [0, 4], [4, 4], [4, 0]])
+    arr = np.zeros((4, 4))
+    affine = Affine(1, 0, 0, 0, -1, 4)
+    stats1 = zonal_stats(polygon, arr, affine=affine, stats="sum count")
+    stats2 = zonal_stats(polygon, arr, affine=affine, limit=4, stats="sum count")
+    assert stats1[0]["count"] == stats2[0]["count"] == 16
+    # valid pixels summing to zero must give 0, not None
+    assert stats1[0]["sum"] == stats2[0]["sum"] == 0
+
+
 def test_geom_split_categorical():
     polygons = data_dir / "polygons.shp"
     categorical_raster = data_dir / "slope_classes.tif"
